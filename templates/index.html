@@ -145,59 +145,40 @@
         </div>
       </div>
 
-      <!-- Card 3: Seats & Quantity -->
+      <!-- Card 3: Seats & Quantity (Dynamic Tiers & Unlimited Quantity) -->
       <div class="bg-[#0e131f] border border-slate-800 rounded-3xl p-5 shadow-xl space-y-3 flex flex-col justify-between">
         <div>
           <div class="flex items-center justify-between pb-2 border-b border-slate-800/80 mb-3">
             <h2 class="text-xs font-black text-white flex items-center gap-1.5">
               <span class="text-amber-400">🎟️</span>
-              <span>3. المقاعد والكمية</span>
+              <span>3. فئات المقاعد والكمية الحرة</span>
             </h2>
-            <span class="text-[10px] text-amber-300 font-mono">سلة 10 دقائق</span>
+            <span class="text-[10px] text-amber-300 font-mono">سحب مباشر من المنصة</span>
           </div>
 
           <div class="space-y-3">
+            <!-- Dynamic Select Dropdown for Tiers -->
             <div>
-              <span class="text-[11px] text-slate-400 block mb-1">الفئة المفضلة:</span>
-              <div class="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  id="tierVipBtn"
-                  onclick="selectTier('vip')"
-                  class="py-2 rounded-xl text-xs font-bold border transition bg-amber-500/20 border-amber-500 text-amber-300"
-                >
-                  كبار الشخصيات VIP
-                </button>
-                <button
-                  type="button"
-                  id="tierRegularBtn"
-                  onclick="selectTier('regular')"
-                  class="py-2 rounded-xl text-xs font-bold border transition bg-slate-950 border-slate-800 text-slate-400"
-                >
-                  المقاعد العادية Regular
-                </button>
-              </div>
+              <label class="block text-[11px] text-slate-400 mb-1">الفئة المسحوبة من المنصة:</label>
+              <select
+                id="tierSelect"
+                class="w-full bg-slate-950 border border-amber-500/50 rounded-xl px-3 py-2 text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-400"
+              >
+                <option value="">-- اضغط بدء البوت لجلب الفئات الحقيقية تلقائياً --</option>
+              </select>
+              <p class="text-[10px] text-slate-500 mt-1">يقوم البوت بملء هذه القائمة تلقائياً بالفئات المتاحة فعلياً.</p>
             </div>
 
-            <div class="flex items-center justify-between bg-slate-950 p-2 rounded-xl border border-slate-800">
-              <span class="text-xs text-slate-300 font-medium">عدد التذاكر:</span>
-              <div class="flex items-center gap-3">
-                <button
-                  type="button"
-                  onclick="changeQuantity(-1)"
-                  class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center justify-center cursor-pointer"
-                >
-                  -
-                </button>
-                <span id="quantityDisplay" class="font-mono text-sm font-black text-amber-400 w-5 text-center">2</span>
-                <button
-                  type="button"
-                  onclick="changeQuantity(1)"
-                  class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center justify-center cursor-pointer"
-                >
-                  +
-                </button>
-              </div>
+            <!-- Unlimited Quantity Input -->
+            <div class="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+              <span class="text-xs text-slate-300 font-medium">عدد التذاكر (غير محدود):</span>
+              <input
+                id="quantityInput"
+                type="number"
+                min="1"
+                value="2"
+                class="w-20 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-center font-mono text-sm font-black text-amber-400 focus:outline-none focus:border-amber-500"
+              />
             </div>
           </div>
         </div>
@@ -262,10 +243,10 @@
           2. تسجيل الدخول والمصادقة
         </div>
         <div id="step3" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500">
-          3. فحص طابور الانتظار
+          3. سحب الفئات الحقيقية
         </div>
         <div id="step4" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500">
-          4. قنص فئة المقاعد
+          4. قنص الكمية المطلوبة
         </div>
         <div id="step5" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500">
           5. قفل وحفظ السلة (10 دقائق)
@@ -289,7 +270,6 @@
         </div>
 
         <div class="flex-1 bg-[#10141f] p-4 flex items-center justify-center relative">
-          <!-- Screenshot Image -->
           <img
             id="screenshotImg"
             src=""
@@ -297,7 +277,6 @@
             class="hidden w-full h-auto max-h-[420px] object-contain rounded-xl shadow-lg border border-slate-800"
           />
 
-          <!-- Placeholder when idle -->
           <div id="screenshotPlaceholder" class="text-center py-16 px-4">
             <div class="w-16 h-16 rounded-2xl bg-purple-600/10 border border-purple-500/20 text-purple-400 mx-auto flex items-center justify-center mb-3 text-2xl">
               🖥️
@@ -347,27 +326,8 @@
 
   <!-- Frontend Logic -->
   <script>
-    let selectedTier = 'vip';
-    let ticketQuantity = 2;
     let pollInterval = null;
-
-    function selectTier(tier) {
-      selectedTier = tier;
-      const vipBtn = document.getElementById('tierVipBtn');
-      const regBtn = document.getElementById('tierRegularBtn');
-      if (tier === 'vip') {
-        vipBtn.className = 'py-2 rounded-xl text-xs font-bold border transition bg-amber-500/20 border-amber-500 text-amber-300';
-        regBtn.className = 'py-2 rounded-xl text-xs font-bold border transition bg-slate-950 border-slate-800 text-slate-400';
-      } else {
-        regBtn.className = 'py-2 rounded-xl text-xs font-bold border transition bg-purple-600/20 border-purple-500 text-purple-300';
-        vipBtn.className = 'py-2 rounded-xl text-xs font-bold border transition bg-slate-950 border-slate-800 text-slate-400';
-      }
-    }
-
-    function changeQuantity(delta) {
-      ticketQuantity = Math.max(1, Math.min(8, ticketQuantity + delta));
-      document.getElementById('quantityDisplay').textContent = ticketQuantity;
-    }
+    let loadedTiersCache = [];
 
     function togglePasswordVisibility() {
       const input = document.getElementById('passwordInput');
@@ -380,6 +340,8 @@
       const targetUrl = document.getElementById('targetUrlInput').value.trim();
       const telegramToken = document.getElementById('telegramTokenInput').value.trim();
       const telegramChatId = document.getElementById('telegramChatIdInput').value.trim();
+      const quantity = parseInt(document.getElementById('quantityInput').value) || 2;
+      const tierSelect = document.getElementById('tierSelect').value;
 
       if (!email || !password || !targetUrl) {
         alert('يرجى إدخال البريد الإلكتروني وكلمة المرور ورابط الفعالية');
@@ -394,8 +356,8 @@
             email,
             password,
             target_url: targetUrl,
-            quantity: ticketQuantity,
-            tier: selectedTier,
+            quantity: quantity,
+            tier: tierSelect,
             telegram_token: telegramToken,
             telegram_chat_id: telegramChatId
           })
@@ -428,6 +390,7 @@
         document.getElementById('logsTerminal').innerHTML = '<div class="text-slate-500 py-6 text-center text-xs" dir="rtl">تمت إعادة تعيين السجل.</div>';
         document.getElementById('screenshotImg').classList.add('hidden');
         document.getElementById('screenshotPlaceholder').classList.remove('hidden');
+        document.getElementById('tierSelect').innerHTML = '<option value="">-- اضغط بدء البوت لجلب الفئات الحقيقية تلقائياً --</option>';
       } catch (e) {}
     }
 
@@ -452,13 +415,13 @@
           dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
           text.textContent = 'تم الحجز بنجاح ✅';
           bottomStatus.textContent = 'تم الحجز بنجاح ✅';
-          document.getElementById('startBtn').classList.remove('hidden');
-          document.getElementById('stopBtn').classList.add('hidden');
+          document.getElementById('startBtn').classList.add('hidden');
+          document.getElementById('stopBtn').classList.remove('hidden');
         } else {
           dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-500';
           text.textContent = 'جاهز (Idle)';
           bottomStatus.textContent = 'جاهز';
-          document.getElementById('startBtn').classList.remove('hidden');
+          document.getElementById('startBtn').classList.add('hidden');
           document.getElementById('stopBtn').classList.add('hidden');
         }
 
@@ -466,9 +429,27 @@
         const step = data.current_step;
         highlightStep('step1', step === 'init_driver');
         highlightStep('step2', ['navigate_login', 'fill_credentials', 'verify_auth'].includes(step));
-        highlightStep('step3', step === 'navigate_event');
+        highlightStep('step3', ['navigate_event', 'extract_tiers'].includes(step));
         highlightStep('step4', ['select_ticket_tier', 'click_reserve'].includes(step));
         highlightStep('step5', step === 'checkout_success' || data.status === 'success');
+
+        // Dynamic Tiers Dropdown Population
+        if (data.available_tiers && data.available_tiers.length > 0) {
+          const selectElem = document.getElementById('tierSelect');
+          const currentVal = selectElem.value;
+          // Check if tiers changed to avoid re-rendering bugs
+          const cacheStr = JSON.stringify(loadedTiersCache);
+          const newStr = JSON.stringify(data.available_tiers);
+          if (cacheStr !== newStr) {
+            loadedTiersCache = data.available_tiers;
+            let optionsHtml = '<option value="">-- اختر الفئة المتاحة --</option>';
+            data.available_tiers.forEach(tier => {
+              optionsHtml += `<option value="${tier}">${tier}</option>`;
+            });
+            selectElem.innerHTML = optionsHtml;
+            if (currentVal) selectElem.value = currentVal;
+          }
+        }
 
         // Screenshot
         if (data.latest_screenshot) {
@@ -482,7 +463,7 @@
         if (data.logs && data.logs.length > 0) {
           const terminal = document.getElementById('logsTerminal');
           let html = `
-            <div class="text-slate-500 pb-2 border-b border-slate-900 flex justify-between text-[10px]">
+            <div class="text-slate-600 pb-2 border-b border-slate-900 flex justify-between text-[10px]">
               <span>[ENGINE] Playwright Cloud Runner v1.44</span>
               <span>PID: WORKER</span>
             </div>
