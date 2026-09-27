@@ -71,28 +71,30 @@ def run_playwright_bot(config):
             bot_state["current_step"] = "fill_credentials"
             log_message(f"كتابة البريد الإلكتروني: {email}")
             
-            # Use flexible selectors for email input
+            # Fill email input
             email_input = page.locator("input[type='email'], input[name='email'], input[placeholder*='البريد']").first
             email_input.wait_for(state="visible", timeout=15000)
             email_input.fill(email)
             time.sleep(1)
 
-            # Click next / continue if Webook uses a multi-step login form
+            # Click Continue/Next button to reveal password field
+            log_message("الضغط على زر المتابعة للانتقال لخطوة كلمة المرور...")
             try:
-                next_btn = page.locator("button:has-text('متابعة'), button:has-text('التالي'), button[type='submit']").first
-                if next_btn.is_visible(timeout=3000):
-                    next_btn.click()
-                    time.sleep(2)
-            except:
-                pass
+                continue_btn = page.locator("button:has-text('متابعة'), button:has-text('التالي'), button:has-text('Continue'), button[type='submit']").first
+                if continue_btn.is_visible(timeout=5000):
+                    continue_btn.click()
+                    time.sleep(3)
+            except Exception as e:
+                log_message(f"ملاحظة حول زر المتابعة: {str(e)}")
 
             log_message("كتابة كلمة المرور...")
             password_input = page.locator("input[type='password'], input[name='password'], input[placeholder*='كلمة']").first
             password_input.wait_for(state="visible", timeout=15000)
             password_input.fill(password)
             
-            # Click submit login
-            login_btn = page.locator("button[type='submit'], button:has-text('تسجيل الدخول')").first
+            # Click final login submit button
+            log_message("إرسال بيانات تسجيل الدخول...")
+            login_btn = page.locator("button[type='submit'], button:has-text('تسجيل الدخول'), button:has-text('دخول')").first
             login_btn.click()
             time.sleep(5)
 
@@ -105,7 +107,7 @@ def run_playwright_bot(config):
 
             # 2. Navigate to Event URL
             bot_state["current_step"] = "navigate_event"
-            log_message(f"الانتقال المباشر لصفحة الفعالية: {target_url}")
+            log_message(f"الانتقال لصفحة الفعالية: {target_url}")
             page.goto(target_url, timeout=60000)
             time.sleep(4)
 
