@@ -70,10 +70,26 @@ def run_playwright_bot(config):
 
             bot_state["current_step"] = "fill_credentials"
             log_message(f"كتابة البريد الإلكتروني: {email}")
-            page.fill("input[type='email'], input[name='email']", email)
             
+            # Use flexible selectors for email input
+            email_input = page.locator("input[type='email'], input[name='email'], input[placeholder*='البريد']").first
+            email_input.wait_for(state="visible", timeout=15000)
+            email_input.fill(email)
+            time.sleep(1)
+
+            # Click next / continue if Webook uses a multi-step login form
+            try:
+                next_btn = page.locator("button:has-text('متابعة'), button:has-text('التالي'), button[type='submit']").first
+                if next_btn.is_visible(timeout=3000):
+                    next_btn.click()
+                    time.sleep(2)
+            except:
+                pass
+
             log_message("كتابة كلمة المرور...")
-            page.fill("input[type='password'], input[name='password']", password)
+            password_input = page.locator("input[type='password'], input[name='password'], input[placeholder*='كلمة']").first
+            password_input.wait_for(state="visible", timeout=15000)
+            password_input.fill(password)
             
             # Click submit login
             login_btn = page.locator("button[type='submit'], button:has-text('تسجيل الدخول')").first
@@ -83,36 +99,15 @@ def run_playwright_bot(config):
             bot_state["current_step"] = "verify_auth"
             log_message("تم المصادقة بنجاح والدخول إلى الحساب.", "success")
 
+            # Capture screenshot
+            screenshot_bytes = page.screenshot()
+            bot_state["latest_screenshot"] = base64.b64encode(screenshot_bytes).decode('utf-8')
+
             # 2. Navigate to Event URL
             bot_state["current_step"] = "navigate_event"
             log_message(f"الانتقال المباشر لصفحة الفعالية: {target_url}")
             page.goto(target_url, timeout=60000)
             time.sleep(4)
-
-            # 3. Handle "أي فريق تشجع؟" (Paused for Manual Selection)
-            bot_state["current_step"] = "select_team_manual"
-            team_detected = False
-            try:
-                if page.locator("text=أي فريق تشجع؟").is_visible(timeout=3000):
-                    team_detected = True
-                    log_message("⚠️ اكتشاف خطوة اختيار الفريق. البوت متوقف مؤقتاً بانتظار اختيارك اليدوي...", "bot")
-            except:
-                pass
-
-            # If team selection screen appears, wait for the user to select and proceed manually
-            while team_detected and not stop_event.is_set():
-                try:
-                    # Check if user has passed the team selection and reached seat map or ticket selection
-                    if not page.locator("text=أي فريق تشجع؟").is_visible(timeout=1000):
-                        log_message("تم تخطي اختيار الفريق بنجاح. استئناف أتمتة البوت...", "success")
-                        break
-                    
-                    # Capture screenshot to let user see current screen
-                    screenshot_bytes = page.screenshot()
-                    bot_state["latest_screenshot"] = base64.b64encode(screenshot_bytes).decode('utf-8')
-                except:
-                    pass
-                time.sleep(3)
 
             # Update screenshot
             try:
@@ -121,7 +116,7 @@ def run_playwright_bot(config):
             except:
                 pass
 
-            # 4. Extract Available Tiers dynamically
+            # 3. Extract Available Tiers dynamically
             bot_state["current_step"] = "extract_tiers"
             log_message("جاري فحص وسحب فئات التذاكر المتاحة فعلياً من المنصة...")
             
@@ -141,7 +136,7 @@ def run_playwright_bot(config):
             bot_state["available_tiers"] = extracted_tiers
             log_message(f"تم رصد الفئات التالية بنجاح: {extracted_tiers}", "success")
 
-            # 5. Polling & Booking Loop
+            # 4. Polling & Booking Loop
             bot_state["current_step"] = "select_ticket_tier"
             log_message(f"بدء مراقبة المقاعد وقنص الكمية المطلوبة ({quantity}) للفئة: {preferred_tier or 'أي فئة متاحة'}...")
 
