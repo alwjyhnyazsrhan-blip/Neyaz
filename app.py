@@ -65,12 +65,12 @@ async def send_telegram_alert(token: str, chat_id: str, message: str, screenshot
         if screenshot_bytes:
             photo_url = f"https://api.telegram.org/bot{token}/sendPhoto"
             files = {"photo": ("screenshot.png", screenshot_bytes, "image/png")}
-            requests.post(photo_url, data={"chat_id": chat_id, "caption": "📸 لقطة تأكيد حجز المقاعد"}, files=files, timeout=12)
+            requests.post(photo_url, data={"chat_id": chat_id, "caption": "📸 لقطة تأكيد حجز المقاعد يدوياً"}, files=files, timeout=12)
     except Exception as e:
         logger.error(f"Failed to send Telegram alert: {e}")
 
 async def playwright_automation_worker(config: dict):
-    """Playwright worker executing live automation workflow"""
+    """Playwright worker executing live automation workflow with manual seat selection pause"""
     from playwright.async_api import async_playwright
 
     email = config.get("email", "")
@@ -80,7 +80,6 @@ async def playwright_automation_worker(config: dict):
     preferred_tier = config.get("tier", "vip").lower()
     telegram_token = config.get("telegram_token", "")
     telegram_chat_id = config.get("telegram_chat_id", "")
-    polling_interval = float(config.get("polling_interval", 4.0))
 
     bot_state["status"] = "running"
     bot_state["account_email"] = email
@@ -89,10 +88,9 @@ async def playwright_automation_worker(config: dict):
     bot_state["preferred_tier"] = preferred_tier
 
     add_log("bot", "=======================================================")
-    add_log("bot", f"🚀 تشغيل بوت Webook الآلي عبر سيرفر الويب...")
+    add_log("bot", f"🚀 تشغيل بوت Webook الآلي والتحضير للاختيار اليدوي...")
     add_log("info", f"[TARGET] الفعالية المستهدفة: {target_url}")
     add_log("info", f"[USER] الحساب: {email}")
-    add_log("info", f"[CONFIG] المقاعد المطلوبة: {quantity} تذاكر | فئة: {preferred_tier.upper()}")
 
     async with async_playwright() as p:
         try:
@@ -150,7 +148,6 @@ async def playwright_automation_worker(config: dict):
                 await email_input.fill(email)
                 await page.wait_for_timeout(500)
 
-                # Click continue/submit email button if present
                 continue_btn = page.locator("button:has-text('تابع باستخدام البريد الإلكتروني'), button:has-text('Continue'), button[type='submit']").first
                 if await continue_btn.is_visible(timeout=3000):
                     await continue_btn.click()
@@ -188,81 +185,50 @@ async def playwright_automation_worker(config: dict):
             except Exception:
                 pass
 
-            # Step 4: Availability Polling & Queue Bypass Loop
-            bot_state["current_step"] = "select_ticket_tier"
-            add_log("bot", "[POLLING] بدء مراقبة المقاعد وتجاوز طابور الانتظار (Queue Bypass)...")
+            # Step 4: Pause & Switch to Manual Seat Selection Mode
+            bot_state["current_step"] = "waiting_manual_selection"
+            bot_state["status"] = "paused" # وضع التوقف المؤقت بانتظار العميل
+            add_log("success", "=======================================================")
+            add_log("success", "🎯 [MANUAL MODE] تم تسجيل الدخول والوصول للفعالية بنجاح!")
+            add_log("success", "[INFO] البوت متوقف الآن مؤقتاً. يمكنك اختيار المقاعد بيدك بحرية تامة.")
+            add_log("success", "=======================================================")
 
-            reserved = False
-            polling_round = 0
+            max_manual_wait = 600  # 10 دقائق مخصصة للتفاعل اليدوي
+            elapsed = 0
 
-            while not reserved and not bot_stop_event.is_set():
-                polling_round += 1
-                add_log("info", f"[POLL #{polling_round}] فحص توفر التذاكر لفئة ({preferred_tier.upper()})...")
-
-                # Update live preview screenshot
+            while elapsed < max_manual_wait and not bot_stop_event.is_set():
+                # تحديث لقطة الشاشة بشكل دوري لتراها مباشرة في لوحة التحكم
                 try:
                     s_bytes = await page.screenshot()
                     bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
                 except Exception:
                     pass
 
-                # Locate Book Now / Tickets button
-                book_btn = page.locator("button:has-text('احجز التذاكر'), button:has-text('Book Tickets'), a:has-text('احجز')").first
-                if await book_btn.is_visible(timeout=2000):
-                    await book_btn.click()
-                    await page.wait_for_timeout(1500)
-
-                # Locate increment button
-                plus_btn = page.locator("button:has-text('+'), .plus-btn, [aria-label='Increment']").first
-                if await plus_btn.is_visible(timeout=3000):
-                    add_log("success", f"🎯 [SNIPER] تم العثور على فئة التذاكر المطلوبة!")
-                    for i in range(quantity):
-                        await plus_btn.click()
-                        await page.wait_for_timeout(250)
-                    add_log("info", f"[QUANTITY] تمت إضافة {quantity} مقاعد إلى الاختيار.")
-
-                    # Click reserve / proceed
-                    proceed_btn = page.locator("button:has-text('المتابعة'), button:has-text('اختر تذكرة'), button:has-text('Continue')").first
-                    if await proceed_btn.is_visible():
-                        bot_state["current_step"] = "click_reserve"
-                        await proceed_btn.click()
-                        await page.wait_for_timeout(3000)
-
-                    # Successful reservation hold
-                    reserved = True
+                current_url = page.url
+                # رصد ما إذا انتقلت بيدك إلى صفحة الدفع أو السلة النهائية
+                if "checkout" in current_url or "payment" in current_url or "order" in current_url:
                     bot_state["status"] = "success"
                     bot_state["current_step"] = "checkout_success"
-                    bot_state["cart_hold_expires"] = "10:00 دقيقة"
                     bot_state["booking_reference"] = f"WBK-{int(time.time())}"
+
+                    add_log("success", "🎉 [CHECKOUT] تم رصد الانتقال لصفحة الدفع يدوياً بنجاح!")
 
                     final_screenshot = await page.screenshot()
                     bot_state["latest_screenshot_b64"] = base64.b64encode(final_screenshot).decode("utf-8")
 
-                    add_log("success", "=======================================================")
-                    add_log("success", f"🎉 [CONGRATS] تم قفل المقاعد بنجاح داخل سلة Webook!")
-                    add_log("success", f"[STATUS] السلة محفوظة لمدة 10 دقائق لإتمام عملية الدفع.")
-                    add_log("success", "=======================================================")
-
-                    # Send Telegram Alert
                     alert_text = (
-                        f"🎉 *تم قنص وحجز التذاكر بنجاح!*\n"
+                        f"🎯 *تم الوصول لصفحة الدفع يدوياً*\n"
                         f"• الفعالية: {bot_state['event_title']}\n"
                         f"• الحساب: {email}\n"
-                        f"• الكمية: {quantity} تذاكر ({preferred_tier.upper()})\n"
-                        f"• الرابط: {target_url}\n"
-                        f"⚠️ المقاعد محفوظة لمدة 10 دقائق في سلة Webook لإتمام الدفع."
+                        f"• الرابط: {current_url}"
                     )
                     await send_telegram_alert(telegram_token, telegram_chat_id, alert_text, final_screenshot)
                     break
-                else:
-                    # Wait and reload if polling
-                    await asyncio.sleep(polling_interval)
-                    try:
-                        await page.reload(wait_until="domcontentloaded", timeout=15000)
-                    except Exception:
-                        pass
 
-            await page.wait_for_timeout(5000)
+                await asyncio.sleep(2.0)
+                elapsed += 2.0
+
+            await page.wait_for_timeout(3000)
             await browser.close()
 
         except Exception as e:
@@ -295,8 +261,8 @@ def index():
 @app.route("/api/start", methods=["POST"])
 def start_bot():
     global bot_thread, bot_stop_event
-    if bot_state["status"] == "running":
-        return jsonify({"success": False, "message": "البوت يعمل بالفعل حالياً!"}), 400
+    if bot_state["status"] == "running" or bot_state["status"] == "paused":
+        return jsonify({"success": False, "message": "البوت يعمل أو في وضع الانتظار بالفعل!"}), 400
 
     data = request.json or {}
     email = data.get("email", "").strip()
@@ -310,7 +276,7 @@ def start_bot():
     bot_thread = threading.Thread(target=run_worker_thread, args=(data,), daemon=True)
     bot_thread.start()
 
-    return jsonify({"success": True, "message": "تم إطلاق بوت Webook بنجاح!"})
+    return jsonify({"success": True, "message": "تم إطلاق بوت Webook بنجاح وجهوزية التحكم اليدوي!"})
 
 @app.route("/api/stop", methods=["POST"])
 def stop_bot():
