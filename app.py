@@ -9,7 +9,7 @@ import asyncio
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 
-# إعداد السجلات (Logging)
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -19,7 +19,7 @@ logger = logging.getLogger("WebookBot")
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-# الحالة العامة للبوت وتحديثات الجلسة
+# Global State for Bot Execution
 bot_state = {
     "status": "idle",       # "idle", "running", "paused", "success", "error"
     "current_step": "idle",
@@ -38,7 +38,7 @@ bot_stop_event = threading.Event()
 bot_thread = None
 
 def add_log(level: str, message: str, step: str = ""):
-    """إضافة سجل زمني مباشر مع الحفاظ على آخر 250 سجل"""
+    """Helper to record timestamped logs to state"""
     timestamp = datetime.now().strftime("%H:%M:%S")
     log_entry = {
         "id": f"log_{int(time.time() * 1000)}",
@@ -53,7 +53,7 @@ def add_log(level: str, message: str, step: str = ""):
     logger.info(f"[{level.upper()}] {message}")
 
 async def send_telegram_alert(token: str, chat_id: str, message: str, screenshot_bytes: bytes = None):
-    """إرسال إشعار فوري مع لقطة الشاشة إلى تليجرام"""
+    """Optional async notification to Telegram bot"""
     if not token or not chat_id:
         return
     try:
@@ -70,7 +70,7 @@ async def send_telegram_alert(token: str, chat_id: str, message: str, screenshot
         logger.error(f"Failed to send Telegram alert: {e}")
 
 async def playwright_automation_worker(config: dict):
-    """المحرك الفعلي لأتمتة المتصفح وتنفيذ خطوات الحجز في Webook"""
+    """Playwright worker executing live automation workflow"""
     from playwright.async_api import async_playwright
 
     email = config.get("email", "")
@@ -89,7 +89,7 @@ async def playwright_automation_worker(config: dict):
     bot_state["preferred_tier"] = preferred_tier
 
     add_log("bot", "=======================================================")
-    add_log("bot", "🚀 تشغيل بوت Webook الآلي عبر سيرفر الويب...")
+    add_log("bot", f"🚀 تشغيل بوت Webook الآلي عبر سيرفر الويب...")
     add_log("info", f"[TARGET] الفعالية المستهدفة: {target_url}")
     add_log("info", f"[USER] الحساب: {email}")
     add_log("info", f"[CONFIG] المقاعد المطلوبة: {quantity} تذاكر | فئة: {preferred_tier.upper()}")
@@ -118,17 +118,17 @@ async def playwright_automation_worker(config: dict):
 
             page = await context.new_page()
 
-            # الخطوة 1: الانتقال لصفحة تسجيل الدخول
+            # Step 1: Open Login Page
             bot_state["current_step"] = "navigate_login"
             login_url = "https://webook.com/ar/login"
             add_log("info", f"[NAVIGATE] فتح صفحة تسجيل الدخول: {login_url}")
             await page.goto(login_url, wait_until="domcontentloaded", timeout=45000)
 
-            # التقاط صورة مبدئية
+            # Take initial screenshot
             screenshot_bytes = await page.screenshot()
             bot_state["latest_screenshot_b64"] = base64.b64encode(screenshot_bytes).decode("utf-8")
 
-            # تجاوز نافذة ملفات تعريف الارتباط إن ظهرت
+            # Check if cookie banner exists and accept
             try:
                 cookie_btn = page.locator("button:has-text('قبول'), button:has-text('Accept'), button#onetrust-accept-btn-handler").first
                 if await cookie_btn.is_visible(timeout=3000):
@@ -141,22 +141,29 @@ async def playwright_automation_worker(config: dict):
                 await browser.close()
                 return
 
-            # الخطوة 2: ملء بيانات الحساب وتسجيل الدخول
+            # Step 2: Input Credentials & Sign In
             bot_state["current_step"] = "fill_credentials"
             add_log("info", f"[AUTH] كتابة البريد الإلكتروني: {email}")
 
             email_input = page.locator("input[type='email'], input[name='email'], #email").first
-            password_input = page.locator("input[type='password'], input[name='password'], #password").first
-
             if await email_input.is_visible(timeout=10000):
                 await email_input.fill(email)
-                await page.wait_for_timeout(300)
-                await password_input.fill(password)
-                add_log("info", "[AUTH] كتابة كلمة المرور المشفّرة: ••••••••••••")
+                await page.wait_for_timeout(500)
 
-                submit_btn = page.locator("button[type='submit'], button:has-text('تسجيل الدخول'), button:has-text('Log in')").first
-                await submit_btn.click()
-                add_log("bot", "[AUTH] تم النقر على زر 'تسجيل الدخول'... جاري التحقق من التوكن")
+                # Click continue/submit email button if present
+                continue_btn = page.locator("button:has-text('تابع باستخدام البريد الإلكتروني'), button:has-text('Continue'), button[type='submit']").first
+                if await continue_btn.is_visible(timeout=3000):
+                    await continue_btn.click()
+                    await page.wait_for_timeout(1000)
+
+                password_input = page.locator("input[type='password'], input[name='password'], #password").first
+                if await password_input.is_visible(timeout=8000):
+                    await password_input.fill(password)
+                    add_log("info", "[AUTH] كتابة كلمة المرور المشفّرة: ••••••••••••")
+
+                    submit_btn = page.locator("button[type='submit'], button:has-text('تسجيل الدخول'), button:has-text('Log in')").first
+                    await submit_btn.click()
+                    add_log("bot", "[AUTH] تم النقر على زر 'تسجيل الدخول'... جاري التحقق من التوكن")
 
                 bot_state["current_step"] = "verify_auth"
                 await page.wait_for_timeout(3500)
@@ -166,13 +173,13 @@ async def playwright_automation_worker(config: dict):
                 await browser.close()
                 return
 
-            # الخطوة 3: الانتقال لرابط الفعالية المستهدفة
+            # Step 3: Navigate to Target Event URL
             bot_state["current_step"] = "navigate_event"
             add_log("info", f"[NAVIGATE] الانتقال المباشر لصفحة الفعالية: {target_url}")
             await page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
             await page.wait_for_timeout(2000)
 
-            # جلب عنوان الفعالية من الصفحة
+            # Extract Title
             try:
                 title_elem = page.locator("h1").first
                 if await title_elem.is_visible():
@@ -181,7 +188,7 @@ async def playwright_automation_worker(config: dict):
             except Exception:
                 pass
 
-            # الخطوة 4: حلقة الفحص وتخطي طابور الانتظار (Queue Bypass)
+            # Step 4: Availability Polling & Queue Bypass Loop
             bot_state["current_step"] = "select_ticket_tier"
             add_log("bot", "[POLLING] بدء مراقبة المقاعد وتجاوز طابور الانتظار (Queue Bypass)...")
 
@@ -192,36 +199,36 @@ async def playwright_automation_worker(config: dict):
                 polling_round += 1
                 add_log("info", f"[POLL #{polling_round}] فحص توفر التذاكر لفئة ({preferred_tier.upper()})...")
 
-                # تحديث لقطة الشاشة للوحة التحكم
+                # Update live preview screenshot
                 try:
                     s_bytes = await page.screenshot()
                     bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
                 except Exception:
                     pass
 
-                # الضغط على زر احجز التذاكر
+                # Locate Book Now / Tickets button
                 book_btn = page.locator("button:has-text('احجز التذاكر'), button:has-text('Book Tickets'), a:has-text('احجز')").first
                 if await book_btn.is_visible(timeout=2000):
                     await book_btn.click()
                     await page.wait_for_timeout(1500)
 
-                # البحث عن زر الفئة وزر زيادة المقاعد (+)
+                # Locate increment button
                 plus_btn = page.locator("button:has-text('+'), .plus-btn, [aria-label='Increment']").first
                 if await plus_btn.is_visible(timeout=3000):
-                    add_log("success", "🎯 [SNIPER] تم العثور على فئة التذاكر المطلوبة!")
+                    add_log("success", f"🎯 [SNIPER] تم العثور على فئة التذاكر المطلوبة!")
                     for i in range(quantity):
                         await plus_btn.click()
                         await page.wait_for_timeout(250)
                     add_log("info", f"[QUANTITY] تمت إضافة {quantity} مقاعد إلى الاختيار.")
 
-                    # النقر على زر المتابعة
+                    # Click reserve / proceed
                     proceed_btn = page.locator("button:has-text('المتابعة'), button:has-text('اختر تذكرة'), button:has-text('Continue')").first
                     if await proceed_btn.is_visible():
                         bot_state["current_step"] = "click_reserve"
                         await proceed_btn.click()
                         await page.wait_for_timeout(3000)
 
-                    # إتمام الحجز وتثبيت السلة
+                    # Successful reservation hold
                     reserved = True
                     bot_state["status"] = "success"
                     bot_state["current_step"] = "checkout_success"
@@ -232,11 +239,11 @@ async def playwright_automation_worker(config: dict):
                     bot_state["latest_screenshot_b64"] = base64.b64encode(final_screenshot).decode("utf-8")
 
                     add_log("success", "=======================================================")
-                    add_log("success", "🎉 [CONGRATS] تم قفل المقاعد بنجاح داخل سلة Webook!")
-                    add_log("success", "[STATUS] السلة محفوظة لمدة 10 دقائق لإتمام عملية الدفع.")
+                    add_log("success", f"🎉 [CONGRATS] تم قفل المقاعد بنجاح داخل سلة Webook!")
+                    add_log("success", f"[STATUS] السلة محفوظة لمدة 10 دقائق لإتمام عملية الدفع.")
                     add_log("success", "=======================================================")
 
-                    # إشعار تليجرام
+                    # Send Telegram Alert
                     alert_text = (
                         f"🎉 *تم قنص وحجز التذاكر بنجاح!*\n"
                         f"• الفعالية: {bot_state['event_title']}\n"
@@ -248,6 +255,7 @@ async def playwright_automation_worker(config: dict):
                     await send_telegram_alert(telegram_token, telegram_chat_id, alert_text, final_screenshot)
                     break
                 else:
+                    # Wait and reload if polling
                     await asyncio.sleep(polling_interval)
                     try:
                         await page.reload(wait_until="domcontentloaded", timeout=15000)
@@ -269,7 +277,7 @@ async def playwright_automation_worker(config: dict):
             await browser.close()
 
 def run_worker_thread(config: dict):
-    """تشغيل الحلقة غير المتزامنة في خيط منفصل (Background Thread)"""
+    """Thread wrapper to execute asyncio playwright worker"""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -278,7 +286,7 @@ def run_worker_thread(config: dict):
         loop.close()
 
 # -------------------------------------------------------------
-# مسارات السيرفر وواجهة برمجة التطبيقات (API Routes)
+# Web Server Routes
 # -------------------------------------------------------------
 @app.route("/")
 def index():
