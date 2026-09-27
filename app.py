@@ -146,17 +146,24 @@ async def playwright_automation_worker(config: dict):
             add_log("info", f"[AUTH] كتابة البريد الإلكتروني: {email}")
 
             email_input = page.locator("input[type='email'], input[name='email'], #email").first
-            password_input = page.locator("input[type='password'], input[name='password'], #password").first
-
             if await email_input.is_visible(timeout=10000):
                 await email_input.fill(email)
-                await page.wait_for_timeout(300)
-                await password_input.fill(password)
-                add_log("info", "[AUTH] كتابة كلمة المرور المشفّرة: ••••••••••••")
+                await page.wait_for_timeout(500)
 
-                submit_btn = page.locator("button[type='submit'], button:has-text('تسجيل الدخول'), button:has-text('Log in')").first
-                await submit_btn.click()
-                add_log("bot", "[AUTH] تم النقر على زر 'تسجيل الدخول'... جاري التحقق من التوكن")
+                # Click continue/submit email button if present
+                continue_btn = page.locator("button:has-text('تابع باستخدام البريد الإلكتروني'), button:has-text('Continue'), button[type='submit']").first
+                if await continue_btn.is_visible(timeout=3000):
+                    await continue_btn.click()
+                    await page.wait_for_timeout(1000)
+
+                password_input = page.locator("input[type='password'], input[name='password'], #password").first
+                if await password_input.is_visible(timeout=8000):
+                    await password_input.fill(password)
+                    add_log("info", "[AUTH] كتابة كلمة المرور المشفّرة: ••••••••••••")
+
+                    submit_btn = page.locator("button[type='submit'], button:has-text('تسجيل الدخول'), button:has-text('Log in')").first
+                    await submit_btn.click()
+                    add_log("bot", "[AUTH] تم النقر على زر 'تسجيل الدخول'... جاري التحقق من التوكن")
 
                 bot_state["current_step"] = "verify_auth"
                 await page.wait_for_timeout(3500)
@@ -204,10 +211,6 @@ async def playwright_automation_worker(config: dict):
                 if await book_btn.is_visible(timeout=2000):
                     await book_btn.click()
                     await page.wait_for_timeout(1500)
-
-                # Locate VIP or Regular tiers
-                tier_selector = f"div:has-text('{preferred_tier.upper()}'), button:has-text('{preferred_tier.upper()}'), .ticket-tier"
-                tier_elem = page.locator(tier_selector).first
 
                 # Locate increment button
                 plus_btn = page.locator("button:has-text('+'), .plus-btn, [aria-label='Increment']").first
