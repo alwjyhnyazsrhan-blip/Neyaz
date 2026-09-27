@@ -7,6 +7,7 @@ import logging
 import threading
 import asyncio
 import subprocess
+import httpx
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 
@@ -25,13 +26,12 @@ bot_state = {
     "current_step": "idle",
     "logs": [],
     "target_url": "",
-    "event_title": "فعالية الاتحاد ضد شباب الأهلي",
+    "event_title": "الوضع الشامل للفعاليات",
     "account_email": "",
+    "scraped_events": [],
     "ticket_quantity": 100,
     "preferred_tier": "vip",
     "latest_screenshot_b64": "",
-    "cart_hold_expires": None,
-    "booking_reference": None
 }
 
 bot_stop_event = threading.Event()
@@ -41,11 +41,18 @@ xvfb_process = None
 def start_virtual_display():
     global xvfb_process
     try:
-        xvfb_process = subprocess.Popen(["Xvfb", ":99", "-screen", "0", "1280x800x24"])
+        if xvfb_process:
+            xvfb_process.terminate()
+        
+        os.environ["XDG_RUNTIME_DIR"] = "/tmp/runtime-root"
+        os.makedirs("/tmp/runtime-root", exist_ok=True)
+        os.chmod("/tmp/runtime-root", 0o700)
+
+        xvfb_process = subprocess.Popen(["Xvfb", ":99", "-screen", "0", "1280x800x24", "-ac"])
         os.environ["DISPLAY"] = ":99"
         logger.info("[DISPLAY] تم تشغيل الشاشة الوهمية Xvfb بنجاح")
     except Exception as e:
-        logger.warning(f"[DISPLAY] Xvfb warning: {e}")
+        logger.warning(f"[DISPLAY] تحذير Xvfb: {e}")
 
 def add_log(level: str, message: str, step: str = ""):
     timestamp = datetime.now().strftime("%H:%M:%S")
@@ -61,6 +68,28 @@ def add_log(level: str, message: str, step: str = ""):
         bot_state["logs"].pop(0)
     logger.info(f"[{level.upper()}] {message}")
 
+async def fetch_all_platform_events():
+    """جلب قائمة الفعاليات العامة من المنصة عبر طلبات سريعة"""
+    add_log("info", "[API] جاري سحب قائمة الفعاليات المتاحة من المنصة الرسمية...")
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json"
+        }
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            response = await client.get("https://webook.com/api/explore/events", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                events_list = data.get("data", []) if isinstance(data, dict) else data
+                bot_state["scraped_events"] = events_list
+                add_log("success", f"[API] تمت عملية السحب بنجاح! تم العثور على {len(events_list)} فعالية.")
+                return events_list
+            else:
+                add_log("warning", f"[API] استجابة غير مباشرة من الخادم (Status: {response.status_code})، سيتم الاعتماد على المتصفح المباشر.")
+    except Exception as e:
+        add_log("warning", f"[API] تعذر السحب المباشر عبر الـ API: {e}")
+    return []
+
 async def playwright_automation_worker(config: dict):
     from playwright.async_api import async_playwright
 
@@ -69,14 +98,15 @@ async def playwright_automation_worker(config: dict):
     email = config.get("email", "")
     password = config.get("password", "")
     target_url = config.get("target_url", "https://webook.com/ar/explore")
-    quantity = int(config.get("quantity", 100))
 
     bot_state["status"] = "running"
     bot_state["account_email"] = email
     bot_state["target_url"] = target_url
 
     add_log("bot", "=======================================================")
-    add_log("bot", "🚀 تشغيل بوت Webook على الشاشة الافتراضية...")
+    add_log("bot", f"🚀 تشغيل البوت الشامل للرابط والفعاليات المستهدفة...")
+
+    await fetch_all_platform_events()
 
     async with async_playwright() as p:
         try:
@@ -99,15 +129,13 @@ async def playwright_automation_worker(config: dict):
 
             page = await context.new_page()
 
-            # Step 1: Open Explorer/Home page first to bypass 404 security checks
             bot_state["current_step"] = "navigate_explore"
-            add_log("info", "[NAVIGATE] فتح صفحة الاستكشاف الرئيسية أولاً لتجنب حظر الحماية...")
+            add_log("info", "[NAVIGATE] فتح منصة الاستكشاف الرئيسية...")
             await page.goto("https://webook.com/ar/explore", wait_until="domcontentloaded", timeout=45000)
             await page.wait_for_timeout(2000)
 
-            # Step 2: Login
             bot_state["current_step"] = "login"
-            add_log("info", "[AUTH] الانتقال لتسجيل الدخول...")
+            add_log("info", "[AUTH] الانتقال لصفحة تسجيل الدخول للحساب...")
             await page.goto("https://webook.com/ar/login", wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_timeout(1500)
 
@@ -126,16 +154,15 @@ async def playwright_automation_worker(config: dict):
                     await password_input.fill(password)
                     submit_btn = page.locator("button[type='submit'], button:has-text('تسجيل الدخول')").first
                     await submit_btn.click()
-                    add_log("success", f"[AUTH] تم تسجيل الدخول بنجاح للحساب: {email}")
+                    add_log("success", f"[AUTH] تم تسجيل الدخول بنجاح بالحساب: {email}")
                     await page.wait_for_timeout(4000)
 
             if bot_stop_event.is_set():
                 await browser.close()
                 return
 
-            # Step 3: Now navigate to target event safely after authentication & cookie sync
             bot_state["current_step"] = "navigate_event"
-            add_log("info", f"[NAVIGATE] الانتقال الآن لصفحة المباراة المطلوبة...")
+            add_log("info", f"[NAVIGATE] الانتقال لرابط الفعالية لفحص المقاعد والتذاكر: {target_url}")
             await page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
             await page.wait_for_timeout(3000)
 
@@ -143,15 +170,22 @@ async def playwright_automation_worker(config: dict):
                 book_btn = page.locator("button:has-text('احجز التذاكر'), button:has-text('Book Tickets'), a:has-text('احجز')").first
                 if await book_btn.is_visible(timeout=4000):
                     await book_btn.click()
-                    add_log("info", "[ACTION] تم النقر على زر حجز التذاكر بنجاح.")
+                    add_log("info", "[ACTION] تم النقر على زر الحجز وفتح مخطط المقاعد والتذاكر.")
             except Exception:
                 pass
 
-            # Manual Mode Pause
-            bot_state["current_step"] = "waiting_manual_selection"
+            try:
+                title_elem = page.locator("h1").first
+                if await title_elem.is_visible():
+                    bot_state["event_title"] = (await title_elem.text_content()).strip()
+                    add_log("info", f"[EVENT] تم رصد الفعالية الحالية: {bot_state['event_title']}")
+            except Exception:
+                pass
+
+            bot_state["current_step"] = "monitoring_seats"
             bot_state["status"] = "paused"
             add_log("success", "=======================================================")
-            add_log("success", "🎯 [READY] المتصفح الآن في صفحة الفعالية وجاهز لاختيار التذاكر بيدك!")
+            add_log("success", "🎯 [READY] البوت يسحب بيانات الصفحة ومخطط المقاعد ويعرض البث الحي للصور الآن!")
             add_log("success", "=======================================================")
 
             while not bot_stop_event.is_set():
@@ -199,12 +233,12 @@ def start_bot():
     target_url = data.get("target_url", "").strip()
 
     if not email or not password or not target_url:
-        return jsonify({"success": False, "message": "الرجاء إدخال البريد وكلمة المرور والرابط."}), 400
+        return jsonify({"success": False, "message": "الرجاء إدخال البيانات والرابط المستهدف."}), 400
 
     bot_stop_event.clear()
     bot_thread = threading.Thread(target=run_worker_thread, args=(data,), daemon=True)
     bot_thread.start()
-    return jsonify({"success": True, "message": "تم بدء تشغيل البوت بنجاح!"})
+    return jsonify({"success": True, "message": "تم بدء تشغيل البوت الشامل بنجاح!"})
 
 @app.route("/api/stop", methods=["POST"])
 def stop_bot():
@@ -220,6 +254,7 @@ def get_status():
         "current_step": bot_state["current_step"],
         "event_title": bot_state["event_title"],
         "target_url": bot_state["target_url"],
+        "scraped_events_count": len(bot_state["scraped_events"]),
         "logs": bot_state["logs"],
         "latest_screenshot": bot_state["latest_screenshot_b64"]
     })
