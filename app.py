@@ -6,6 +6,7 @@ import base64
 import logging
 import threading
 import asyncio
+import subprocess
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 
@@ -27,7 +28,7 @@ bot_state = {
     "target_url": "",
     "event_title": "فعالية غير محددة",
     "account_email": "",
-    "ticket_quantity": 2,
+    "ticket_quantity": 100,
     "preferred_tier": "vip",
     "latest_screenshot_b64": "",
     "cart_hold_expires": None,
@@ -36,6 +37,18 @@ bot_state = {
 
 bot_stop_event = threading.Event()
 bot_thread = None
+xvfb_process = None
+
+def start_virtual_display():
+    """تشغيل شاشة وهمية Xvfb للسيرفرات السحابية لتشغيل متصفح مرئي"""
+    global xvfb_process
+    try:
+        # التأكد من تشغيل الشاشة الوهمية برقم :99
+        xvfb_process = subprocess.Popen(["Xvfb", ":99", "-screen", "0", "1280x800x24"])
+        os.environ["DISPLAY"] = ":99"
+        logger.info("[DISPLAY] تم تشغيل الشاشة الوهمية Xvfb بنجاح على Display :99")
+    except Exception as e:
+        logger.warning(f"[DISPLAY] تعذر تشغيل Xvfb (قد تكون محلياً على جهازك): {e}")
 
 def add_log(level: str, message: str, step: str = ""):
     """Helper to record timestamped logs to state"""
@@ -70,13 +83,16 @@ async def send_telegram_alert(token: str, chat_id: str, message: str, screenshot
         logger.error(f"Failed to send Telegram alert: {e}")
 
 async def playwright_automation_worker(config: dict):
-    """Playwright worker executing live automation workflow with manual seat selection pause"""
+    """Playwright worker executing live automation workflow on Virtual Display"""
     from playwright.async_api import async_playwright
+
+    # تشغيل الشاشة الوهمية قبل فتح المتصفح
+    start_virtual_display()
 
     email = config.get("email", "")
     password = config.get("password", "")
     target_url = config.get("target_url", "https://webook.com/ar/explore")
-    quantity = int(config.get("quantity", 2))
+    quantity = int(config.get("quantity", 100))
     preferred_tier = config.get("tier", "vip").lower()
     telegram_token = config.get("telegram_token", "")
     telegram_chat_id = config.get("telegram_chat_id", "")
@@ -88,17 +104,17 @@ async def playwright_automation_worker(config: dict):
     bot_state["preferred_tier"] = preferred_tier
 
     add_log("bot", "=======================================================")
-    add_log("bot", f"🚀 تشغيل بوت Webook الآلي والتحضير للاختيار اليدوي...")
+    add_log("bot", f"🚀 تشغيل بوت Webook على الشاشة الافتراضية المرئية...")
     add_log("info", f"[TARGET] الفعالية المستهدفة: {target_url}")
     add_log("info", f"[USER] الحساب: {email}")
 
     async with async_playwright() as p:
         try:
             bot_state["current_step"] = "init_driver"
-            add_log("info", "[BROWSER] تهيئة متصفح Chromium في بيئة الحماية Stealth...")
+            add_log("info", "[BROWSER] تهيئة متصفح Chromium بوضع مرئي على الشاشة الافتراضية...")
 
             browser = await p.chromium.launch(
-                headless=True,
+                headless=False,  # تشغيل مرئي حقيقي داخل الشاشة الوهمية
                 args=[
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
@@ -122,11 +138,9 @@ async def playwright_automation_worker(config: dict):
             add_log("info", f"[NAVIGATE] فتح صفحة تسجيل الدخول: {login_url}")
             await page.goto(login_url, wait_until="domcontentloaded", timeout=45000)
 
-            # Take initial screenshot
             screenshot_bytes = await page.screenshot()
             bot_state["latest_screenshot_b64"] = base64.b64encode(screenshot_bytes).decode("utf-8")
 
-            # Check if cookie banner exists and accept
             try:
                 cookie_btn = page.locator("button:has-text('قبول'), button:has-text('Accept'), button#onetrust-accept-btn-handler").first
                 if await cookie_btn.is_visible(timeout=3000):
@@ -170,13 +184,21 @@ async def playwright_automation_worker(config: dict):
                 await browser.close()
                 return
 
-            # Step 3: Navigate to Target Event URL
+            # Step 3: Navigate to Target Event URL & Open Booking Window
             bot_state["current_step"] = "navigate_event"
             add_log("info", f"[NAVIGATE] الانتقال المباشر لصفحة الفعالية: {target_url}")
             await page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(3000)
 
-            # Extract Title
+            try:
+                book_trigger_btn = page.locator("button:has-text('احجز التذاكر'), button:has-text('Book Tickets'), a:has-text('احجز'), button:has-text('اختر التذاكر')").first
+                if await book_trigger_btn.is_visible(timeout=4000):
+                    await book_trigger_btn.click()
+                    add_log("info", "[ACTION] تم النقر على زر حجز التذاكر لفتح خيارات المقاعد والتذاكر مباشرة.")
+                    await page.wait_for_timeout(2500)
+            except Exception:
+                pass
+
             try:
                 title_elem = page.locator("h1").first
                 if await title_elem.is_visible():
@@ -185,19 +207,18 @@ async def playwright_automation_worker(config: dict):
             except Exception:
                 pass
 
-            # Step 4: Pause & Switch to Manual Seat Selection Mode
+            # Step 4: Manual Control Mode on Virtual Display
             bot_state["current_step"] = "waiting_manual_selection"
-            bot_state["status"] = "paused" # وضع التوقف المؤقت بانتظار العميل
+            bot_state["status"] = "paused"
             add_log("success", "=======================================================")
-            add_log("success", "🎯 [MANUAL MODE] تم تسجيل الدخول والوصول للفعالية بنجاح!")
-            add_log("success", "[INFO] البوت متوقف الآن مؤقتاً. يمكنك اختيار المقاعد بيدك بحرية تامة.")
+            add_log("success", "🎯 [VIRTUAL LIVE MODE] المتصفح يعمل الآن على الشاشة الوهمية!")
+            add_log("info", "[INFO] يمكنك الآن رؤية التحديثات عبر لقطات الشاشة وتحديد العدد المطلوب (100 مقعد أو أكثر) بيدك.")
             add_log("success", "=======================================================")
 
-            max_manual_wait = 600  # 10 دقائق مخصصة للتفاعل اليدوي
+            max_manual_wait = 900
             elapsed = 0
 
             while elapsed < max_manual_wait and not bot_stop_event.is_set():
-                # تحديث لقطة الشاشة بشكل دوري لتراها مباشرة في لوحة التحكم
                 try:
                     s_bytes = await page.screenshot()
                     bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
@@ -205,19 +226,18 @@ async def playwright_automation_worker(config: dict):
                     pass
 
                 current_url = page.url
-                # رصد ما إذا انتقلت بيدك إلى صفحة الدفع أو السلة النهائية
                 if "checkout" in current_url or "payment" in current_url or "order" in current_url:
                     bot_state["status"] = "success"
                     bot_state["current_step"] = "checkout_success"
                     bot_state["booking_reference"] = f"WBK-{int(time.time())}"
 
-                    add_log("success", "🎉 [CHECKOUT] تم رصد الانتقال لصفحة الدفع يدوياً بنجاح!")
+                    add_log("success", "🎉 [CHECKOUT] تم رصد الانتقال لصفحة الدفع بنجاح!")
 
                     final_screenshot = await page.screenshot()
                     bot_state["latest_screenshot_b64"] = base64.b64encode(final_screenshot).decode("utf-8")
 
                     alert_text = (
-                        f"🎯 *تم الوصول لصفحة الدفع يدوياً*\n"
+                        f"🎯 *تم الوصول لصفحة الدفع*\n"
                         f"• الفعالية: {bot_state['event_title']}\n"
                         f"• الحساب: {email}\n"
                         f"• الرابط: {current_url}"
@@ -228,7 +248,7 @@ async def playwright_automation_worker(config: dict):
                 await asyncio.sleep(2.0)
                 elapsed += 2.0
 
-            await page.wait_for_timeout(3000)
+            await page.wait_for_timeout(5000)
             await browser.close()
 
         except Exception as e:
@@ -243,7 +263,6 @@ async def playwright_automation_worker(config: dict):
             await browser.close()
 
 def run_worker_thread(config: dict):
-    """Thread wrapper to execute asyncio playwright worker"""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -276,7 +295,7 @@ def start_bot():
     bot_thread = threading.Thread(target=run_worker_thread, args=(data,), daemon=True)
     bot_thread.start()
 
-    return jsonify({"success": True, "message": "تم إطلاق بوت Webook بنجاح وجهوزية التحكم اليدوي!"})
+    return jsonify({"success": True, "message": "تم إطلاق البوت على الشاشة الافتراضية بنجاح!"})
 
 @app.route("/api/stop", methods=["POST"])
 def stop_bot():
