@@ -20,13 +20,13 @@ def add_log(level, message):
     if len(bot_logs) > 100:
         bot_logs.pop(0)
 
-# Playwright Background Worker (Ultra-Fast Sniper)
+# Playwright Background Worker (Force-Click & JS Executor Sniper)
 async def run_automation_script(email, password, event_url, quantity):
     global bot_status, is_running, browser_instance, context_instance, page_instance
     is_running = True
     bot_status = "يعمل"
     
-    add_log("info", "🚀 بدء تشغيل محرك القنص الفائق (Ultra-Fast)...")
+    add_log("info", "🚀 بدء تشغيل محرك القنص الفائق مع تجاوز الطبقات المتداخلة...")
     
     async with async_playwright() as p:
         try:
@@ -48,7 +48,7 @@ async def run_automation_script(email, password, event_url, quantity):
             try:
                 cookie_btn = page_instance.locator("button:has-text('قبول'), button:has-text('Accept')").first
                 if await cookie_btn.is_visible(timeout=1000):
-                    await cookie_btn.click(timeout=500)
+                    await cookie_btn.click(force=True)
             except Exception:
                 pass
 
@@ -63,7 +63,7 @@ async def run_automation_script(email, password, event_url, quantity):
             
             submit_btn = page_instance.locator("button[type='submit'], button:has-text('تسجيل الدخول'), button:has-text('Login')").first
             if await submit_btn.is_visible(timeout=2000):
-                await submit_btn.click()
+                await submit_btn.click(force=True)
                 
             add_log("success", f"تم تسجيل الدخول بنجاح.")
             await asyncio.sleep(1)
@@ -72,67 +72,90 @@ async def run_automation_script(email, password, event_url, quantity):
             add_log("info", f"الانتقال السريع لصفحة الفعالية...")
             await page_instance.goto(event_url, timeout=30000)
 
-            # 4. Ultra-Fast Sniping Loop
-            add_log("info", "⚡ بدء حلقة القنص الفوري للمقاعد والمناطق...")
+            # 4. Ultra-Fast Sniping Loop using JS evaluation to bypass pointer-events interception
+            add_log("info", "⚡ بدء حلقة القنص البرمجي الفوري للمقاعد...")
             poll_count = 0
             reserved = False
             target_qty = int(quantity)
 
             while is_running and not reserved:
                 poll_count += 1
-                add_log("poll", f"⚡ فحص سريع للخريطة [محاولة #{poll_count}]...")
+                add_log("poll", f"⚡ فحص الخريطة [محاولة #{poll_count}]...")
 
                 try:
-                    # Try clicking category/zone blocks first if map is overview
-                    blocks = page_instance.locator(".category-block, [class*='block'], g[class*='zone'], .seatmap-section, .area-item")
-                    b_count = await blocks.count()
-                    if b_count > 0:
-                        for b in range(min(b_count, 3)):
-                            try:
-                                await blocks.nth(b).click(timeout=300)
-                            except Exception:
-                                pass
+                    # Execute JS to click available seats directly via DOM and bypass pointer-events block
+                    clicked_count = await page_instance.evaluate(f"""
+                        (qty) => {{
+                            const selectors = [
+                                '.seat-available', 
+                                'rect.available', 
+                                'g.seat:not(.booked)', 
+                                '[data-seat-status="available"]', 
+                                '.ticket-seat-item', 
+                                'circle.available', 
+                                'path.available',
+                                '.category-block',
+                                '[class*="block"]'
+                            ];
+                            
+                            let seats = [];
+                            for (let sel of selectors) {{
+                                found = document.querySelectorAll(sel);
+                                if (found && found.length > 0) {{
+                                    seats = Array.from(found);
+                                    break;
+                                }}
+                            }}
+                            
+                            let clicked = 0;
+                            for (let i = 0; i < Math.min(seats.length, qty); i++) {{
+                                try {{
+                                    seats[i].click();
+                                    clicked++;
+                                }} catch (e) {{}}
+                            }}
+                            return clicked;
+                        }}
+                    """, target_qty)
 
-                    # Find and click available seats directly
-                    available_seats = page_instance.locator(".seat-available, rect.available, g.seat:not(.booked), [data-seat-status='available'], .ticket-seat-item, circle.available, path.available")
-                    count = await available_seats.count()
+                    if clicked_count > 0:
+                        add_log("success", f"🎯 تم اختيار عدد {clicked_count} مقعد بنجاح عبر التجاوز البرمجي!")
+                        await asyncio.sleep(1)
 
-                    if count > 0:
-                        add_log("success", f"🎯 تم رصد {count} مقعد متاح! جاري حجز {target_qty} مقاعد...")
-                        clicked_count = 0
-                        
-                        for i in range(min(count, target_qty)):
-                            try:
-                                seat = available_seats.nth(i)
-                                await seat.click(timeout=500, force=True)
-                                clicked_count += 1
-                                add_log("info", f"تم اختيار المقعد ({clicked_count}/{target_qty})")
-                            except Exception:
-                                pass
+                        # Click Next to Payment using JS or force click
+                        next_clicked = await page_instance.evaluate("""
+                            () => {
+                                const buttons = Array.from(document.querySelectorAll('button'));
+                                const target = buttons.find(b => b.innerText.includes('التالي للدفع') || b.innerText.includes('Next') || b.innerText.includes('متابعة') || b.innerText.includes('الدفع'));
+                                if (target) {
+                                    target.click();
+                                    return true;
+                                }
+                                return false;
+                            }
+                        """)
 
-                        if clicked_count > 0:
-                            # Fast click on 'Next to Payment'
-                            next_btn = page_instance.locator("button:has-text('التالي للدفع'), button:has-text('Next'), button:has-text('متابعة'), button:has-text('الدفع')").first
-                            if await next_btn.is_visible(timeout=1500):
-                                await next_btn.click(timeout=1000, force=True)
-                                add_log("success", "🚀 تم النقر على زر المتابعة إلى الدفع بنجاح!")
+                        if next_clicked:
+                            add_log("success", "🚀 تم النقر على زر المتابعة إلى الدفع بنجاح!")
+                            await asyncio.sleep(1.5)
 
-                                # Accept terms and proceed
-                                terms = page_instance.locator("input[type='checkbox']").first
-                                if await terms.is_visible(timeout=1000):
-                                    await terms.click(timeout=500, force=True)
+                            # Accept terms and click final payment
+                            await page_instance.evaluate("""
+                                () => {
+                                    const checkbox = document.querySelector('input[type="checkbox"]');
+                                    if (checkbox && !checkbox.checked) checkbox.click();
+                                    
+                                    const buttons = Array.from(document.querySelectorAll('button'));
+                                    const payBtn = buttons.find(b => b.innerText.includes('الدفع بواسطة') || b.innerText.includes('Pay with') || b.innerText.includes('تأكيد الدفع'));
+                                    if (payBtn) payBtn.click();
+                                }
+                            """)
+                            add_log("success", "💳 تم الوصول لبوابة الدفع بنجاح تام!")
+                            reserved = True
 
-                                pay_btn = page_instance.locator("button:has-text('الدفع بواسطة'), button:has-text('Pay with'), button:has-text('تأكيد الدفع')").first
-                                if await pay_btn.is_visible(timeout=1000):
-                                    await pay_btn.click(timeout=500, force=True)
-                                    add_log("success", "💳 تم الوصول لبوابة الدفع بنجاح تام!")
-                                    reserved = True
-                    
                 except Exception as e:
-                    # Silent fast pass on minor iteration errors to keep lightning speed
                     pass
 
-                # Short loop delay for absolute max speed
                 await asyncio.sleep(0.5)
 
             if reserved:
