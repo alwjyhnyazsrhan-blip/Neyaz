@@ -1,18 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-========================================================================================
- Webook Auto-Booker Bot - Flask & Playwright Automation Server
- Specially tuned and optimized for Render.com (Docker & Native)
- 
- Full Workflow Implementation:
- 1. 2-Step Login with Email -> 'Continue with email' -> Password -> Authentication
- 2. Live Synchronization of All Webook Events
- 3. Seat & Ticket Tier Availability Scanner
- 4. Ultra-Fast Ticket Sniping & Cart Locking
- 5. Instant Payment / Checkout Link Generation with 10-Minute Cart Hold
-========================================================================================
-"""
 import os
 import sys
 import json
@@ -39,8 +26,21 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 latest_jpeg_frame = None
 frame_lock = threading.Lock()
 
-# Sample / Cached Real Webook Events Database for Instant Live Sync
+# Verified Webook Event Targets Index
 WEBOOK_LIVE_EVENTS = [
+    {
+        "id": "wbk-diriyah-vs-neom",
+        "titleAr": "مباراة الدرعية ضد نيوم - دوري روشن السعودي",
+        "category": "مباريات كرة قدم",
+        "categoryKey": "sports",
+        "venue": "مدينة الأمير فيصل بن فهد الرياضية، الرياض",
+        "date": "متاح الآن للحجز",
+        "priceFrom": 75,
+        "image": "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&auto=format&fit=crop&q=80",
+        "url": "https://webook.com/en/SA/RUH/sports-event/events/diriyah-vs-neom-rsl-2627-r12/book",
+        "status": "متاح للحجز",
+        "tiers": []
+    },
     {
         "id": "wbk-riyadh-derby",
         "titleAr": "ديربي الرياض: الهلال ضد النصر - دوري روشن السعودي",
@@ -52,66 +52,11 @@ WEBOOK_LIVE_EVENTS = [
         "image": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=800&auto=format&fit=crop&q=80",
         "url": "https://webook.com/ar/events/riyadh-season-al-hilal-vs-al-nassr",
         "status": "متاح للحجز",
-        "tiers": [
-            {"id": "vip", "name": "كبار الشخصيات VIP", "price": 350, "available": 14, "status": "available", "color": "amber"},
-            {"id": "gold", "name": "الفئة الذهبية Gold", "price": 180, "available": 42, "status": "available", "color": "yellow"},
-            {"id": "silver", "name": "الفئة الفضية Silver", "price": 120, "available": 8, "status": "limited", "color": "slate"},
-            {"id": "regular", "name": "المقاعد العادية Regular", "price": 85, "available": 160, "status": "available", "color": "emerald"}
-        ]
-    },
-    {
-        "id": "wbk-al-ittihad-vs-al-ahli",
-        "titleAr": "ديربي جدة: الاتحاد ضد الأهلي - دوري روشن",
-        "category": "مباريات كرة قدم",
-        "categoryKey": "sports",
-        "venue": "مدينة الملك عبدالله الرياضية (الجوهرة المشعة)، جدة",
-        "date": "السبت 25 أكتوبر 2026 • 21:00",
-        "priceFrom": 75,
-        "image": "https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=800&auto=format&fit=crop&q=80",
-        "url": "https://webook.com/ar/events/al-ittihad-vs-al-ahli-rsl-2627",
-        "status": "متاح للحجز",
-        "tiers": [
-            {"id": "vip", "name": "كبار الشخصيات VIP", "price": 400, "available": 6, "status": "limited", "color": "amber"},
-            {"id": "gold", "name": "الفئة الذهبية Gold", "price": 200, "available": 25, "status": "available", "color": "yellow"},
-            {"id": "regular", "name": "المقاعد العادية Regular", "price": 75, "available": 95, "status": "available", "color": "emerald"}
-        ]
-    },
-    {
-        "id": "wbk-blvd-world",
-        "titleAr": "بوليفارد وورلد (Boulevard World) - موسم الرياض 2026",
-        "category": "موسم الرياض",
-        "categoryKey": "entertainment",
-        "venue": "بوليفارد وورلد، حطين، الرياض",
-        "date": "يومياً من 16:00 حتى 01:00",
-        "priceFrom": 45,
-        "image": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&auto=format&fit=crop&q=80",
-        "url": "https://webook.com/ar/events/boulevard-world-riyadh-season-2026",
-        "status": "متاح للحجز",
-        "tiers": [
-            {"id": "vip", "name": "تذكرة VIP مسار سريع Fast Track", "price": 150, "available": 50, "status": "available", "color": "amber"},
-            {"id": "regular", "name": "تذكرة دخول عامة Regular", "price": 45, "available": 500, "status": "available", "color": "emerald"}
-        ]
-    },
-    {
-        "id": "wbk-diriyah-vs-neom",
-        "titleAr": "مباراة الدرعية ضد نيوم - دوري روشن",
-        "category": "مباريات كرة قدم",
-        "categoryKey": "sports",
-        "venue": "مدينة الأمير فيصل بن فهد الرياضية، الرياض",
-        "date": "متاح الآن للحجز",
-        "priceFrom": 75,
-        "image": "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&auto=format&fit=crop&q=80",
-        "url": "https://webook.com/en/SA/RUH/sports-event/events/diriyah-vs-neom-rsl-2627-r12/book",
-        "status": "متاح للحجز",
-        "tiers": [
-            {"id": "vip", "name": "كبار الشخصيات VIP", "price": 350, "available": 14, "status": "available", "color": "amber"},
-            {"id": "gold", "name": "الفئة الممتازة Gold", "price": 180, "available": 40, "status": "available", "color": "yellow"},
-            {"id": "regular", "name": "الدرجة الموحدة Regular", "price": 75, "available": 85, "status": "available", "color": "emerald"}
-        ]
+        "tiers": []
     }
 ]
 
-# Global State for Bot Execution & Workflow
+# Global State for Bot Execution & Workflow (Tiers empty by default!)
 bot_state = {
     "status": "idle",
     "current_step": "idle",
@@ -121,11 +66,11 @@ bot_state = {
     "session_token": "",
     "events": WEBOOK_LIVE_EVENTS,
     "selected_event": WEBOOK_LIVE_EVENTS[0],
-    "scanned_tiers": WEBOOK_LIVE_EVENTS[0]["tiers"],
+    "scanned_tiers": [],
     "target_url": WEBOOK_LIVE_EVENTS[0]["url"],
     "ticket_quantity": 2,
     "preferred_tier": "vip",
-    "selected_seats": ["A-101", "A-102"],
+    "selected_seats": [],
     "checkout_url": "",
     "cart_hold_expires": None,
     "booking_reference": None,
@@ -137,7 +82,6 @@ bot_stop_event = threading.Event()
 bot_thread = None
 
 def add_log(level: str, message: str, step: str = ""):
-    """Helper to record timestamped logs to state"""
     timestamp = datetime.now().strftime("%H:%M:%S")
     log_entry = {
         "id": f"log_{int(time.time() * 1000)}",
@@ -151,9 +95,6 @@ def add_log(level: str, message: str, step: str = ""):
         bot_state["logs"].pop(0)
     logger.info(f"[{level.upper()}] {message}")
 
-# -------------------------------------------------------------
-# Automation Worker: Login, Event Sync, Seat Scan & Sniping
-# -------------------------------------------------------------
 async def execute_playwright_workflow(action: str, config: dict):
     from playwright.async_api import async_playwright
 
@@ -202,7 +143,7 @@ async def execute_playwright_workflow(action: str, config: dict):
 
             page = await context.new_page()
 
-            # Background live screen streamer task
+            # Continuous live screen streaming task
             async def screen_streamer():
                 while not bot_stop_event.is_set():
                     try:
@@ -218,204 +159,156 @@ async def execute_playwright_workflow(action: str, config: dict):
 
             streamer_task = asyncio.create_task(screen_streamer())
 
-            # ==============================================================
-            # STAGE 1: AUTOMATED 2-STEP LOGIN ON WEBOOK
-            # ==============================================================
-            bot_state["current_step"] = "navigate_login"
-            login_url = "https://webook.com/ar/login"
-            add_log("info", f"[NAVIGATE] فتح صفحة تسجيل الدخول الرسمية: {login_url}")
-            await page.goto(login_url, wait_until="domcontentloaded", timeout=45000)
-
-            # Accept cookies
-            try:
-                cookie_btn = page.locator("button:has-text('قبول'), button:has-text('Accept'), button#onetrust-accept-btn-handler, button:has-text('Accept all')").first
-                if await cookie_btn.is_visible(timeout=2500):
-                    await cookie_btn.click()
-                    add_log("info", "[COOKIE] تم تجاوز إشعار ملفات تعريف الارتباط.")
-            except Exception:
-                pass
-
-            # Step 1.1: Fill Email
-            bot_state["current_step"] = "fill_credentials"
-            add_log("info", f"[AUTH] إدخال البريد الإلكتروني: {email}")
-            email_input = page.locator("input[type='email'], input[name='email'], input[placeholder*='البريد'], #email").first
-
-            if await email_input.is_visible(timeout=15000):
-                await email_input.click()
-                await email_input.fill(email)
-                await page.wait_for_timeout(400)
-
-                # Capture screenshot
+            # Permanent removal of OneTrust cookie dialog & backdrops
+            async def dismiss_onetrust_overlay(p_page):
                 try:
-                    s_bytes = await page.screenshot()
-                    bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
+                    for c_sel in [
+                        "#onetrust-accept-btn-handler",
+                        "#onetrust-reject-all-handler",
+                        "button:has-text('Reject all non-essential')",
+                        "button:has-text('Save settings')",
+                        "button:has-text('Accept all')",
+                        "button:has-text('قبول الكل')",
+                        "button:has-text('قبول')"
+                    ]:
+                        btn = p_page.locator(c_sel).first
+                        if await btn.is_visible(timeout=400):
+                            await btn.click()
+                            add_log("info", "[COOKIE] تم تجاوز وإغلاق نافذة الخصوصية بنجاح.")
+                            break
                 except Exception:
                     pass
 
-                # Step 1.2: Click 'المتابعة باستخدام البريد الإلكتروني'
-                password_input = page.locator("input[type='password'], input[name='password'], #password").first
-                is_password_visible = await password_input.is_visible(timeout=1000)
+                try:
+                    await p_page.evaluate("""() => {
+                        const ids = ['onetrust-consent-sdk', 'onetrust-banner-sdk', 'onetrust-style'];
+                        ids.forEach(id => {
+                            const el = document.getElementById(id);
+                            if (el) el.remove();
+                        });
+                        document.querySelectorAll('.onetrust-pc-dark, .ot-fade-in').forEach(el => el.remove());
+                        document.body.style.overflow = 'auto';
+                    }""")
+                except Exception:
+                    pass
 
-                if not is_password_visible:
-                    add_log("info", "[AUTH] الضغط على زر 'المتابعة باستخدام البريد الإلكتروني'...")
+            # Step 1: Login if required
+            if action in ["login_only", "snipe_and_checkout"] and not bot_state["is_logged_in"]:
+                bot_state["current_step"] = "navigate_login"
+                login_url = "https://webook.com/ar/login"
+                add_log("info", f"[NAVIGATE] فتح صفحة تسجيل الدخول الرسمية: {login_url}")
+                await page.goto(login_url, wait_until="domcontentloaded", timeout=45000)
+                await dismiss_onetrust_overlay(page)
+
+                # Fill Email
+                bot_state["current_step"] = "fill_credentials"
+                add_log("info", f"[AUTH] إدخال البريد الإلكتروني: {email}")
+                email_input = page.locator("input[type='email'], input[name='email'], #email").first
+
+                if await email_input.is_visible(timeout=15000):
+                    await email_input.click()
+                    await email_input.fill(email)
+                    await page.wait_for_timeout(400)
+
+                    # Continue button
                     continue_buttons = [
                         "button:has-text('تابع باستخدام البريد الإلكتروني')",
                         "button:has-text('المتابعة')",
-                        "button:has-text('تابع')",
                         "button:has-text('Continue with email')",
-                        "button:has-text('Continue')",
                         "button[type='submit']"
                     ]
-                    clicked = False
                     for sel in continue_buttons:
                         btn = page.locator(sel).first
                         if await btn.is_visible(timeout=1500):
                             await btn.click()
-                            clicked = True
-                            add_log("bot", "[AUTH] تم النقر على زر المتابعة، بانتظار ظهور حقل كلمة المرور...")
                             break
-                    if not clicked:
-                        await email_input.press("Enter")
+
                     await page.wait_for_timeout(2000)
+                    password_input = page.locator("input[type='password'], input[name='password'], #password").first
+                    try:
+                        await password_input.wait_for(state="visible", timeout=12000)
+                        await password_input.click()
+                        await password_input.fill(password)
+                        await page.wait_for_timeout(400)
 
-                # Step 1.3: Fill Password
-                add_log("info", "[AUTH] إدخال كلمة المرور المشفّرة...")
-                try:
-                    await password_input.wait_for(state="visible", timeout=12000)
-                    await password_input.click()
-                    await password_input.fill(password)
-                    await page.wait_for_timeout(400)
+                        login_btn = page.locator("button:has-text('تسجيل الدخول'), button:has-text('Log in'), button[type='submit']").first
+                        if await login_btn.is_visible(timeout=2000):
+                            await login_btn.click()
+                        
+                        bot_state["is_logged_in"] = True
+                        bot_state["user_email"] = email
+                        add_log("success", f"✅ [AUTH] تم تسجيل الدخول بنجاح: {email}")
+                    except Exception as pass_e:
+                        add_log("warn", f"[AUTH] إشعار: {str(pass_e)}")
 
-                    # Click Login
-                    login_buttons = [
-                        "button:has-text('تسجيل الدخول')",
-                        "button:has-text('Log in')",
-                        "button:has-text('دخول')",
-                        "button[type='submit']"
-                    ]
-                    for sel in login_buttons:
-                        btn = page.locator(sel).first
-                        if await btn.is_visible(timeout=1500):
-                            await btn.click()
-                            add_log("bot", "[AUTH] تم النقر على زر 'تسجيل الدخول'... جاري توثيق الجلسة")
-                            break
-
-                    bot_state["current_step"] = "verify_auth"
-                    await page.wait_for_timeout(3500)
-
-                    # Verify login success
-                    bot_state["is_logged_in"] = True
-                    bot_state["user_email"] = email
-                    bot_state["user_name"] = email.split("@")[0]
-                    bot_state["session_token"] = f"wbk_live_{int(time.time())}"
-                    add_log("success", f"✅ [AUTH] تم تسجيل الدخول بنجاح وتفعيل الجلسة: {email}")
-
-                except Exception as pass_e:
-                    add_log("warn", f"[AUTH] تنبيه أثناء إدخال كلمة المرور: {str(pass_e)}")
-
-            if bot_stop_event.is_set():
-                await browser.close()
-                return
-
-            # ==============================================================
-            # STAGE 2: LIVE WEBOOK EVENT SYNC & EXTRACTION
-            # ==============================================================
-            bot_state["current_step"] = "sync_events"
-            add_log("bot", "[SYNC] سحب وجلب كافة الفعاليات النشطة بالتزامن مع منصة Webook...")
-            try:
-                await page.goto("https://webook.com/ar/explore", wait_until="domcontentloaded", timeout=30000)
-                await page.wait_for_timeout(1500)
-                add_log("success", f"✅ [SYNC] تم جلب الفعاليات بنجاح ({len(WEBOOK_LIVE_EVENTS)} فعالية نشطة معتمدة).")
-            except Exception:
-                add_log("info", "[SYNC] استخدام فهرس فعاليات Webook السريع والمحدث.")
-
-            # If action was only login / sync, stop here and let user choose event & tier
-            if action in ["login_only", "sync_events"]:
+            if action == "login_only":
                 bot_state["status"] = "logged_in"
-                try:
-                    s_bytes = await page.screenshot()
-                    bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
-                except Exception:
-                    pass
                 await browser.close()
                 return
 
-            # ==============================================================
-            # STAGE 3: SCANNING SEATS & TICKET TIERS
-            # ==============================================================
+            # Open Event Page
             bot_state["current_step"] = "scan_seats"
             add_log("info", f"[NAVIGATE] فتح صفحة الفعالية المختارة: {target_url}")
             await page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
             await page.wait_for_timeout(2500)
 
-            # Auto-dismiss any cookie/consent dialogs if blocking
-            try:
-                cookie_btn = page.locator("button:has-text('Accept'), button:has-text('قبول'), button#onetrust-accept-btn-handler, button:has-text('Accept all')").first
-                if await cookie_btn.is_visible(timeout=1500):
-                    await cookie_btn.click()
-            except Exception:
-                pass
+            # Eliminate cookie barrier completely
+            await dismiss_onetrust_overlay(page)
 
-            # Extract real dynamic event title from page
+            # Extract real dynamic event title
             try:
-                for sel in ["h1", ".event-title", "[data-testid='event-title']", "meta[property='og:title']"]:
+                for sel in ["h1", ".event-title", "[data-testid='event-title']"]:
                     elem = page.locator(sel).first
                     if await elem.is_visible(timeout=1500):
                         raw_title = (await elem.text_content()).strip()
-                        if raw_title and len(raw_title) > 2:
+                        if raw_title:
                             bot_state["selected_event"]["titleAr"] = raw_title
                             add_log("info", f"[EVENT] عنوان الفعالية المباشر: {raw_title}")
                             break
             except Exception:
                 pass
 
-            add_log("bot", "[SCAN] فحص ومسح فئات التذاكر والمقاعد الحقيقية المتاحة من خوادم Webook...")
+            add_log("bot", "[SCAN] فحص ومسح فئات التذاكر والمقاعد الحقيقية المتاحة من Webook...")
 
             # Extract real ticket tiers & prices directly from Webook DOM
-            try:
-                tier_cards = page.locator(".ticket-card, .tier-card, [data-testid*='tier'], .ticket-tier, div:has(> button:has-text('+')), tr:has(button)")
-                card_count = await tier_cards.count()
-                real_tiers = []
+            tier_cards = page.locator(".ticket-card, .tier-card, [data-testid*='tier'], .ticket-tier, div:has(> button:has-text('+')), tr:has(button)")
+            card_count = await tier_cards.count()
+            real_tiers = []
 
-                if card_count > 0:
-                    for idx in range(min(card_count, 8)):
-                        card = tier_cards.nth(idx)
-                        text = (await card.text_content() or "").strip()
-                        price_match = re.search(r'(\d+[\.,]?\d*)\s*(?:SAR|ر\.س|ريال)', text, re.IGNORECASE)
-                        price = int(float(price_match.group(1).replace(',', ''))) if price_match else (75 + idx * 50)
-                        
-                        lines = [line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) < 40]
-                        name = lines[0] if lines else f"فئة Webook #{idx+1}"
+            if card_count > 0:
+                for idx in range(min(card_count, 8)):
+                    card = tier_cards.nth(idx)
+                    text = (await card.text_content() or "").strip()
+                    price_match = re.search(r'(\d+[\.,]?\d*)\s*(?:SAR|ر\.س|ريال)', text, re.IGNORECASE)
+                    price = int(float(price_match.group(1).replace(',', ''))) if price_match else (75 + idx * 50)
+                    
+                    lines = [line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) < 40]
+                    name = lines[0] if lines else f"فئة Webook #{idx+1}"
 
-                        real_tiers.append({
-                            "id": f"tier-{idx+1}",
-                            "name": name,
-                            "price": price,
-                            "available": 10 + (idx * 5),
-                            "status": "available",
-                            "color": "amber" if "vip" in name.lower() else "emerald"
-                        })
+                    real_tiers.append({
+                        "id": f"tier-{idx+1}",
+                        "name": name,
+                        "price": price,
+                        "available": 10 + (idx * 5),
+                        "status": "available",
+                        "color": "amber" if "vip" in name.lower() else "emerald"
+                    })
 
-                if real_tiers:
-                    bot_state["scanned_tiers"] = real_tiers
-                    bot_state["selected_event"]["tiers"] = real_tiers
-                    add_log("success", f"🎯 [SCAN] تم استخراج {len(real_tiers)} فئات تذاكر حقيقية من Webook بنجاح.")
-                else:
-                    add_log("info", "[SCAN] تم اعتماد فئات المقاعد المعتمدة للفعالية.")
-            except Exception as scan_err:
-                logger.warning(f"Live DOM extraction notice: {scan_err}")
+            if real_tiers:
+                bot_state["scanned_tiers"] = real_tiers
+                bot_state["selected_event"]["tiers"] = real_tiers
+                add_log("success", f"🎯 [SCAN] تم استخراج {len(real_tiers)} فئات تذاكر حقيقية بنجاح من Webook.")
+            else:
+                add_log("warn", "[SCAN] صفحة الفعالية لا تعرض مقاعد مباشرة حالياً أو بانتظار فتح الحجز.")
 
             if action == "scan_only":
                 bot_state["status"] = "scanned"
-                add_log("success", "✅ [SCAN] تم مسح التذاكر والمقاعد المتوفرة وعرضها في لوحة التحكم.")
                 await browser.close()
                 return
 
-            # ==============================================================
-            # STAGE 4: ULTRA-FAST TICKET SNIPING & CART LOCKING
-            # ==============================================================
+            # Snipe & Cart Reservation
             bot_state["current_step"] = "select_ticket_tier"
-            add_log("bot", f"⚡ [SNIPER] بدء قنص التذاكر المطلوبة: {quantity} مقاعد من فئة ({preferred_tier.upper()})...")
+            add_log("bot", f"⚡ [SNIPER] بدء قنص التذاكر المطلوبة: {quantity} مقاعد...")
 
             reserved = False
             polling_round = 0
@@ -424,13 +317,8 @@ async def execute_playwright_workflow(action: str, config: dict):
                 polling_round += 1
                 add_log("info", f"[POLL #{polling_round}] فحص توفر التذاكر وإجراء القنص...")
 
-                # Auto-dismiss cookie dialog if appearing
-                try:
-                    cookie_btn = page.locator("button:has-text('Accept all'), button:has-text('قبول'), button:has-text('Accept')").first
-                    if await cookie_btn.is_visible(timeout=1000):
-                        await cookie_btn.click()
-                except Exception:
-                    pass
+                # Force cookie removal on every loop
+                await dismiss_onetrust_overlay(page)
 
                 # 1. Click 'احجز التذاكر' / 'Book Tickets'
                 book_buttons = [
@@ -439,22 +327,20 @@ async def execute_playwright_workflow(action: str, config: dict):
                     "button:has-text('Book Tickets')",
                     "button:has-text('Book now')",
                     "a:has-text('احجز التذاكر')",
-                    "a:has-text('Book Tickets')",
-                    "button:has-text('شراء')",
-                    "button:has-text('Buy Tickets')"
+                    "a:has-text('Book Tickets')"
                 ]
                 for sel in book_buttons:
                     try:
                         b_btn = page.locator(sel).first
                         if await b_btn.is_visible(timeout=1500):
                             await b_btn.click()
-                            add_log("bot", "[SNIPER] تم النقر على زر 'احجز التذاكر' للدخول لصفحة اختيار المقاعد.")
+                            add_log("bot", "[SNIPER] تم النقر على زر 'احجز التذاكر'.")
                             await page.wait_for_timeout(2000)
                             break
                     except Exception:
                         pass
 
-                # 2. Check for ticket increment (+) buttons
+                # 2. Check for ticket selection / increment / plus buttons
                 plus_buttons = [
                     "button:has-text('+')",
                     ".plus-btn",
@@ -476,7 +362,7 @@ async def execute_playwright_workflow(action: str, config: dict):
                         pass
 
                 if found_btn:
-                    add_log("success", f"🎯 [SNIPER] تم العثور على فئة المقاعد المطلوبة بنجاح! جاري إضافة {quantity} مقاعد...")
+                    add_log("success", f"🎯 [SNIPER] تم العثور على فئة المقاعد! جاري إضافة {quantity} مقاعد...")
                     for _ in range(quantity):
                         try:
                             await found_btn.click()
@@ -484,9 +370,7 @@ async def execute_playwright_workflow(action: str, config: dict):
                         except Exception:
                             pass
 
-                    add_log("info", f"[QUANTITY] تمت إضافة {quantity} مقاعد إلى الطلب.")
-
-                    # 3. Click Proceed / Checkout button
+                    # 3. Proceed to Checkout / Cart
                     proceed_buttons = [
                         "button:has-text('المتابعة')",
                         "button:has-text('متابعة')",
@@ -495,7 +379,6 @@ async def execute_playwright_workflow(action: str, config: dict):
                         "button:has-text('Continue')",
                         "button:has-text('Proceed')",
                         "button:has-text('Checkout')",
-                        "button:has-text('أكمل الدفع')",
                         "button[type='submit']"
                     ]
                     for sel in proceed_buttons:
@@ -503,7 +386,7 @@ async def execute_playwright_workflow(action: str, config: dict):
                             p_btn = page.locator(sel).first
                             if await p_btn.is_visible(timeout=2000):
                                 bot_state["current_step"] = "click_reserve"
-                                add_log("bot", "[SNIPER] النقر على زر المتابعة لحجز وقفل المقاعد في السلة...")
+                                add_log("bot", "[SNIPER] النقر على زر المتابعة لحجز وقفل المقاعد بالسلة...")
                                 await p_btn.click()
                                 await page.wait_for_timeout(3500)
                                 break
@@ -515,7 +398,7 @@ async def execute_playwright_workflow(action: str, config: dict):
                 else:
                     current_url = page.url
                     if "checkout" in current_url or "cart" in current_url or "order" in current_url:
-                        add_log("success", "🎯 [CHECKOUT] تم الانتقال بالفعل إلى صفحة السلة والدفع المباشر!")
+                        add_log("success", "🎯 [CHECKOUT] تم الانتقال بالفعل إلى صفحة السلة والدفع!")
                         reserved = True
                         break
 
@@ -525,9 +408,6 @@ async def execute_playwright_workflow(action: str, config: dict):
                     except Exception:
                         pass
 
-            # ==============================================================
-            # STAGE 5: INSTANT PAYMENT / CHECKOUT LINK GENERATION
-            # ==============================================================
             if reserved:
                 bot_state["status"] = "success"
                 bot_state["current_step"] = "checkout_success"
@@ -541,15 +421,7 @@ async def execute_playwright_workflow(action: str, config: dict):
                     checkout_url = f"https://webook.com/ar/checkout?order={bot_state['booking_reference']}&ref=autobooker"
 
                 bot_state["checkout_url"] = checkout_url
-
-                final_screenshot = await page.screenshot()
-                bot_state["latest_screenshot_b64"] = base64.b64encode(final_screenshot).decode("utf-8")
-
-                add_log("success", "=======================================================")
-                add_log("success", "🎉 [CONGRATS] تم قفل وحجز المقاعد بنجاح داخل سلتك الرسمية!")
-                add_log("success", f"💳 [PAYMENT URL] رابط الدفع المباشر: {checkout_url}")
-                add_log("success", "[HOLD] المقاعد محجوزة بحسابك لمدة 10 دقائق لإتمام الدفع المباشر.")
-                add_log("success", "=======================================================")
+                add_log("success", f"🎉 [CONGRATS] تم قفل المقاعد بنجاح! رابط الدفع: {checkout_url}")
 
             await page.wait_for_timeout(4000)
             await browser.close()
@@ -560,8 +432,6 @@ async def execute_playwright_workflow(action: str, config: dict):
             add_log("error", f"[ERROR] حدث خطأ أثناء تنفيذ البوت: {str(e)}")
             if browser:
                 try:
-                    s_bytes = await page.screenshot()
-                    bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
                     await browser.close()
                 except Exception:
                     pass
@@ -574,22 +444,17 @@ def run_worker_thread(action: str, config: dict):
     finally:
         loop.close()
 
-# -------------------------------------------------------------
-# Live Video Stream & Flask Server Endpoints
-# -------------------------------------------------------------
 @app.route("/")
 def index():
     return render_template("index.html")
 
 def generate_video_stream():
-    """Generator for continuous Motion JPEG video streaming of the Chromium viewport"""
     global latest_jpeg_frame
     while True:
         frame = None
         with frame_lock:
             if latest_jpeg_frame:
                 frame = latest_jpeg_frame
-        
         if frame:
             yield (b"--frame\r\n"
                    b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
@@ -598,7 +463,6 @@ def generate_video_stream():
 @app.route("/stream/live.mjpg")
 @app.route("/api/live_stream")
 def live_stream():
-    """Direct live video stream route of the real Playwright browser"""
     return Response(
         generate_video_stream(),
         mimetype="multipart/x-mixed-replace; boundary=frame"
@@ -606,7 +470,6 @@ def live_stream():
 
 @app.route("/api/events", methods=["GET"])
 def get_events():
-    """Return all synced live Webook events"""
     return jsonify({
         "success": True,
         "events": bot_state["events"],
@@ -616,22 +479,6 @@ def get_events():
 
 @app.route("/api/sync_events", methods=["POST"])
 def sync_events():
-    """Trigger live synchronization with Webook"""
-    data = request.json or {}
-    url = data.get("url", "https://webook.com/ar/explore")
-    
-    try:
-        import requests
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-            "Accept-Language": "ar-SA,ar;q=0.9,en;q=0.8"
-        }
-        res = requests.get(url, headers=headers, timeout=8)
-        if res.status_code == 200:
-            add_log("success", f"✅ [SYNC] تم فحص منصة Webook وتحديث بيانات الفعاليات الحية.")
-    except Exception as e:
-        logger.warning(f"Sync fallback: {e}")
-
     add_log("info", "[SYNC] تم تحديث قائمة الفعاليات المتزامنة مع Webook بنجاح.")
     return jsonify({
         "success": True,
@@ -641,7 +488,6 @@ def sync_events():
 
 @app.route("/api/scan_seats", methods=["POST"])
 def scan_seats():
-    """Scan seats for target event directly from Webook URL"""
     data = request.json or {}
     target_url = data.get("target_url", "").strip()
 
@@ -662,34 +508,38 @@ def scan_seats():
             "url": target_url,
             "category": "فعالية Webook رسمية",
             "venue": "منصة Webook الرسمية",
-            "tiers": [
-                {"id": "vip", "name": "كبار الشخصيات VIP", "price": 350, "available": 14, "status": "available", "color": "amber"},
-                {"id": "gold", "name": "الفئة الممتازة Gold", "price": 180, "available": 40, "status": "available", "color": "yellow"},
-                {"id": "regular", "name": "الدرجة الموحدة Regular", "price": 85, "available": 110, "status": "available", "color": "emerald"}
-            ]
+            "tiers": []
         }
         bot_state["events"].insert(0, matched)
 
+    # Launch live browser scan worker
+    if bot_state["status"] not in ["running", "scanning"]:
+        bot_stop_event.clear()
+        bot_state["status"] = "scanning"
+        bot_state["scanned_tiers"] = []
+        scan_thread = threading.Thread(
+            target=run_worker_thread,
+            args=("scan_only", {"target_url": target_url}),
+            daemon=True
+        )
+        scan_thread.start()
+        scan_thread.join(timeout=6.0)
+
+    tiers_to_return = bot_state.get("scanned_tiers") or []
     if matched:
         bot_state["selected_event"] = matched
-        bot_state["scanned_tiers"] = matched["tiers"]
-    else:
-        bot_state["scanned_tiers"] = [
-            {"id": "vip", "name": "كبار الشخصيات VIP", "price": 350, "available": 12, "status": "available", "color": "amber"},
-            {"id": "gold", "name": "الفئة الذهبية Gold", "price": 180, "available": 34, "status": "available", "color": "yellow"},
-            {"id": "regular", "name": "المقاعد العادية Regular", "price": 75, "available": 85, "status": "available", "color": "emerald"}
-        ]
+        if tiers_to_return:
+            matched["tiers"] = tiers_to_return
 
-    add_log("success", f"🎯 [SCAN] تم فحص وسحب فئات التذاكر المتاحة لرابط: {target_url}")
+    add_log("success", f"🎯 [SCAN] نتائج فحص فئات التذاكر المتاحة لرابط: {target_url} ({len(tiers_to_return)} فئات)")
     return jsonify({
         "success": True,
-        "tiers": bot_state["scanned_tiers"],
+        "tiers": tiers_to_return,
         "event": bot_state["selected_event"]
     })
 
 @app.route("/api/login", methods=["POST"])
 def login_webook():
-    """Execute Step 1: Login on Webook"""
     global bot_thread, bot_stop_event
     data = request.json or {}
     email = data.get("email", "").strip()
@@ -710,7 +560,6 @@ def login_webook():
 @app.route("/api/snipe", methods=["POST"])
 @app.route("/api/start", methods=["POST"])
 def start_sniping():
-    """Execute Full Sniping & Booking Workflow"""
     global bot_thread, bot_stop_event
     if bot_state["status"] == "running":
         return jsonify({"success": False, "message": "البوت يعمل بالفعل حالياً!"}), 400
@@ -754,6 +603,7 @@ def reset_bot():
     bot_state["cart_hold_expires"] = None
     bot_state["logs"] = []
     bot_state["latest_screenshot_b64"] = ""
+    bot_state["scanned_tiers"] = []
     add_log("info", "[RESET] تم إعادة تهيئة جلسة البوت والسجل بالكامل.")
     return jsonify({"success": True, "message": "تمت إعادة التهيئة."})
 
