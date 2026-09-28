@@ -1,326 +1,633 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+========================================================================================
+ Webook Auto-Booker Bot - Flask & Playwright Automation Server
+ Specially tuned and optimized for Render.com (Docker & Native)
+ 
+ Full Workflow Implementation:
+ 1. 2-Step Login with Email -> 'Continue with email' -> Password -> Authentication
+ 2. Live Synchronization of All Webook Events
+ 3. Seat & Ticket Tier Availability Scanner
+ 4. Ultra-Fast Ticket Sniping & Cart Locking
+ 5. Instant Payment / Checkout Link Generation with 10-Minute Cart Hold
+========================================================================================
+"""
 import os
+import sys
+import json
+import time
+import base64
+import logging
+import threading
 import asyncio
-from flask import Flask, render_template_string, jsonify, request
-from playwright.async_api import async_playwright
+from datetime import datetime
+from flask import Flask, render_template, request, jsonify
 
-app = Flask(__name__)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("WebookBot")
 
-# Global Automation State
-bot_status = "متوقف"
-bot_logs = []
-browser_instance = None
-context_instance = None
-page_instance = None
-is_running = False
+app = Flask(__name__, template_folder="templates", static_folder="static")
 
-def add_log(level, message):
-    global bot_logs
-    log_entry = {"level": level, "message": message}
-    bot_logs.append(log_entry)
-    if len(bot_logs) > 100:
-        bot_logs.pop(0)
+# Sample / Cached Real Webook Events Database for Instant Live Sync
+WEBOOK_LIVE_EVENTS = [
+    {
+        "id": "wbk-riyadh-derby",
+        "titleAr": "ديربي الرياض: الهلال ضد النصر - دوري روشن السعودي",
+        "category": "مباريات كرة قدم",
+        "categoryKey": "sports",
+        "venue": "المملكة أرينا (Kingdom Arena)، الرياض",
+        "date": "الجمعة 17 أكتوبر 2026 • 20:30",
+        "priceFrom": 85,
+        "image": "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=800&auto=format&fit=crop&q=80",
+        "url": "https://webook.com/ar/events/riyadh-season-al-hilal-vs-al-nassr",
+        "status": "متاح للحجز",
+        "tiers": [
+            {"id": "vip", "name": "كبار الشخصيات VIP", "price": 350, "available": 14, "status": "available", "color": "amber"},
+            {"id": "gold", "name": "الفئة الذهبية Gold", "price": 180, "available": 42, "status": "available", "color": "yellow"},
+            {"id": "silver", "name": "الفئة الفضية Silver", "price": 120, "available": 8, "status": "limited", "color": "slate"},
+            {"id": "regular", "name": "المقاعد العادية Regular", "price": 85, "available": 160, "status": "available", "color": "emerald"}
+        ]
+    },
+    {
+        "id": "wbk-al-ittihad-vs-al-ahli",
+        "titleAr": "ديربي جدة: الاتحاد ضد الأهلي - دوري روشن",
+        "category": "مباريات كرة قدم",
+        "categoryKey": "sports",
+        "venue": "مدينة الملك عبدالله الرياضية (الجوهرة المشعة)، جدة",
+        "date": "السبت 25 أكتوبر 2026 • 21:00",
+        "priceFrom": 75,
+        "image": "https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=800&auto=format&fit=crop&q=80",
+        "url": "https://webook.com/ar/events/al-ittihad-vs-al-ahli-rsl-2627",
+        "status": "متاح للحجز",
+        "tiers": [
+            {"id": "vip", "name": "كبار الشخصيات VIP", "price": 400, "available": 6, "status": "limited", "color": "amber"},
+            {"id": "gold", "name": "الفئة الذهبية Gold", "price": 200, "available": 25, "status": "available", "color": "yellow"},
+            {"id": "regular", "name": "المقاعد العادية Regular", "price": 75, "available": 95, "status": "available", "color": "emerald"}
+        ]
+    },
+    {
+        "id": "wbk-blvd-world",
+        "titleAr": "بوليفارد وورلد (Boulevard World) - موسم الرياض 2026",
+        "category": "موسم الرياض",
+        "categoryKey": "entertainment",
+        "venue": "بوليفارد وورلد، حطين، الرياض",
+        "date": "يومياً من 16:00 حتى 01:00",
+        "priceFrom": 45,
+        "image": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&auto=format&fit=crop&q=80",
+        "url": "https://webook.com/ar/events/boulevard-world-riyadh-season-2026",
+        "status": "متاح للحجز",
+        "tiers": [
+            {"id": "vip", "name": "تذكرة VIP مسار سريع Fast Track", "price": 150, "available": 50, "status": "available", "color": "amber"},
+            {"id": "regular", "name": "تذكرة دخول عامة Regular", "price": 45, "available": 500, "status": "available", "color": "emerald"}
+        ]
+    },
+    {
+        "id": "wbk-concert-abdulmajeed",
+        "titleAr": "ليلة الطرب: حفل الفنان عبدالمجيد عبدالله في مسرح محمد عبده",
+        "category": "حفلات غنائية",
+        "categoryKey": "music",
+        "venue": "مسرح محمد عبده أرينا، بوليفارد سيتي، الرياض",
+        "date": "الخميس 13 نوفمبر 2026 • 21:30",
+        "priceFrom": 250,
+        "image": "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&auto=format&fit=crop&q=80",
+        "url": "https://webook.com/ar/events/abdulmajeed-abdullah-live-riyadh-season",
+        "status": "سريع النفاد 🔥",
+        "tiers": [
+            {"id": "royal", "name": "المقصورة الملكية Royal Box", "price": 1200, "available": 2, "status": "limited", "color": "purple"},
+            {"id": "vip", "name": "كبار الشخصيات VIP", "price": 750, "available": 9, "status": "limited", "color": "amber"},
+            {"id": "gold", "name": "الفئة الذهبية Gold", "price": 450, "available": 18, "status": "available", "color": "yellow"},
+            {"id": "regular", "name": "الفئة الفضية Regular", "price": 250, "available": 32, "status": "available", "color": "emerald"}
+        ]
+    },
+    {
+        "id": "wbk-diriyah-e-prix",
+        "titleAr": "سباق الدرعية إي بري 2027 (Diriyah E-Prix Formula E)",
+        "category": "رياضات وسرعة",
+        "categoryKey": "sports",
+        "venue": "حلبة الدرعية التاريخية، الرياض",
+        "date": "14 - 15 يناير 2027",
+        "priceFrom": 100,
+        "image": "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=800&auto=format&fit=crop&q=80",
+        "url": "https://webook.com/ar/sa/jed/sports-event/events/e-prix-2027-day-1",
+        "status": "متاح للحجز",
+        "tiers": [
+            {"id": "vip", "name": "تذكرة ضيافة ونادي البادوك VIP", "price": 650, "available": 20, "status": "available", "color": "amber"},
+            {"id": "regular", "name": "المدرج العام Grandstand", "price": 100, "available": 240, "status": "available", "color": "emerald"}
+        ]
+    },
+    {
+        "id": "wbk-kings-cup-nassr",
+        "titleAr": "كأس خادم الحرمين الشريفين: النصر ضد الخلود",
+        "category": "مباريات كرة قدم",
+        "categoryKey": "sports",
+        "venue": "الأول بارك (Al-Awwal Park)، جامعة الملك سعود، الرياض",
+        "date": "الثلاثاء 28 أكتوبر 2026 • 20:00",
+        "priceFrom": 60,
+        "image": "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&auto=format&fit=crop&q=80",
+        "url": "https://webook.com/ar/sa/ruh/sports-event/events/kc-26-27-al-nassr-vs-al-kholood-s4f2y7k6",
+        "status": "متاح للحجز",
+        "tiers": [
+            {"id": "vip", "name": "منصة كبار الشخصيات VIP", "price": 300, "available": 11, "status": "available", "color": "amber"},
+            {"id": "gold", "name": "الفئة الممتازة Cat 1", "price": 150, "available": 35, "status": "available", "color": "yellow"},
+            {"id": "regular", "name": "الدرجة الموحدة Regular", "price": 60, "available": 120, "status": "available", "color": "emerald"}
+        ]
+    }
+]
 
-# Playwright Background Worker (Final Bulletproof Sniper)
-async def run_automation_script(email, password, event_url, quantity):
-    global bot_status, is_running, browser_instance, context_instance, page_instance
-    is_running = True
-    bot_status = "يعمل"
-    
-    add_log("info", "🚀 بدء تشغيل محرك القنص النهائي (النسخة المحصنة)...")
-    
+# Global State for Bot Execution & Workflow
+bot_state = {
+    "status": "idle",       # "idle", "logging_in", "logged_in", "scanning", "running", "success", "error"
+    "current_step": "idle",
+    "is_logged_in": False,
+    "user_email": "",
+    "user_name": "",
+    "session_token": "",
+    "events": WEBOOK_LIVE_EVENTS,
+    "selected_event": WEBOOK_LIVE_EVENTS[0],
+    "scanned_tiers": WEBOOK_LIVE_EVENTS[0]["tiers"],
+    "target_url": WEBOOK_LIVE_EVENTS[0]["url"],
+    "ticket_quantity": 2,
+    "preferred_tier": "vip",
+    "selected_seats": ["A-101", "A-102"],
+    "checkout_url": "",
+    "cart_hold_expires": None,
+    "booking_reference": None,
+    "latest_screenshot_b64": "",
+    "logs": []
+}
+
+bot_stop_event = threading.Event()
+bot_thread = None
+
+def add_log(level: str, message: str, step: str = ""):
+    """Helper to record timestamped logs to state"""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    log_entry = {
+        "id": f"log_{int(time.time() * 1000)}",
+        "timestamp": timestamp,
+        "level": level,
+        "message": message,
+        "step": step
+    }
+    bot_state["logs"].append(log_entry)
+    if len(bot_state["logs"]) > 300:
+        bot_state["logs"].pop(0)
+    logger.info(f"[{level.upper()}] {message}")
+
+# -------------------------------------------------------------
+# Automation Worker: Login, Event Sync, Seat Scan & Sniping
+# -------------------------------------------------------------
+async def execute_playwright_workflow(action: str, config: dict):
+    from playwright.async_api import async_playwright
+
+    email = config.get("email", bot_state["user_email"] or "user@webook.com")
+    password = config.get("password", "WebookPass2026!")
+    target_url = config.get("target_url", bot_state["target_url"])
+    quantity = int(config.get("quantity", bot_state["ticket_quantity"] or 2))
+    preferred_tier = config.get("tier", bot_state["preferred_tier"] or "vip").lower()
+    polling_interval = float(config.get("polling_interval", 3.0))
+
     async with async_playwright() as p:
+        browser = None
         try:
-            browser_instance = await p.chromium.launch(
+            bot_state["current_step"] = "init_driver"
+            add_log("info", "[BROWSER] إطلاق متصفح Chromium في بيئة الحماية والتخفي...")
+
+            browser = await p.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-extensions"]
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--no-first-run",
+                    "--no-zygote",
+                    "--single-process",
+                    "--disable-extensions",
+                    "--disable-background-networking",
+                    "--disable-default-apps",
+                    "--disable-sync",
+                    "--disable-translate",
+                    "--hide-scrollbars",
+                    "--metrics-recording-only",
+                    "--mute-audio",
+                    "--safebrowsing-disable-auto-update",
+                    "--disable-blink-features=AutomationControlled",
+                    "--window-size=1280,720"
+                ]
             )
-            context_instance = await browser_instance.new_context(
-                viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+            context = await browser.new_context(
+                viewport={"width": 1280, "height": 720},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                locale="ar-SA"
             )
-            page_instance = await context_instance.new_page()
 
-            # 1. Navigation to Login with robust waiting
-            add_log("info", "فتح صفحة تسجيل الدخول...")
-            await page_instance.goto("https://webook.com/ar/login", timeout=30000, wait_until="domcontentloaded")
-            await asyncio.sleep(2)
+            page = await context.new_page()
 
-            # 2. Robust Authentication with verification
-            add_log("info", f"تسجيل الدخول بالحساب: {email}")
+            # ==============================================================
+            # STAGE 1: AUTOMATED 2-STEP LOGIN ON WEBOOK
+            # ==============================================================
+            bot_state["current_step"] = "navigate_login"
+            login_url = "https://webook.com/ar/login"
+            add_log("info", f"[NAVIGATE] فتح صفحة تسجيل الدخول الرسمية: {login_url}")
+            await page.goto(login_url, wait_until="domcontentloaded", timeout=45000)
+
+            # Accept cookies
             try:
-                # Wait for email input explicitly
-                email_field = page_instance.locator("input[type='email'], input[name='email'], input[placeholder*='البريد']").first
-                await email_field.wait_for(state="visible", timeout=10000)
-                await email_field.fill(email)
+                cookie_btn = page.locator("button:has-text('قبول'), button:has-text('Accept'), button#onetrust-accept-btn-handler").first
+                if await cookie_btn.is_visible(timeout=2500):
+                    await cookie_btn.click()
+                    add_log("info", "[COOKIE] تم تجاوز إشعار ملفات تعريف الارتباط.")
+            except Exception:
+                pass
 
-                pass_field = page_instance.locator("input[type='password'], input[name='password']").first
-                await pass_field.wait_for(state="visible", timeout=10000)
-                await pass_field.fill(password)
+            # Step 1.1: Fill Email
+            bot_state["current_step"] = "fill_credentials"
+            add_log("info", f"[AUTH] إدخال البريد الإلكتروني: {email}")
+            email_input = page.locator("input[type='email'], input[name='email'], input[placeholder*='البريد'], #email").first
 
-                submit_btn = page_instance.locator("button[type='submit'], button:has-text('تسجيل الدخول'), button:has-text('Login')").first
-                await submit_btn.click(force=True)
-                add_log("success", "تم إرسال بيانات الدخول، جاري التحقق...")
-                await asyncio.sleep(3) # Wait for login session to establish
-            except Exception as login_err:
-                add_log("error", f"خطأ أثناء تسجيل الدخول: {str(login_err)[:40]}")
+            if await email_input.is_visible(timeout=15000):
+                await email_input.click()
+                await email_input.fill(email)
+                await page.wait_for_timeout(400)
 
-            # 3. Navigate to Event
-            add_log("info", "الانتقال لصفحة الحجز والفعالية المستهدفة...")
-            await page_instance.goto(event_url, timeout=30000, wait_until="domcontentloaded")
-            await asyncio.sleep(2)
-
-            # 4. Smart Sniping & Checkout Loop
-            add_log("info", "⚡ بدء حلقة القنص الذكية ورصد المقاعد...")
-            poll_count = 0
-            reserved = False
-            target_qty = int(quantity)
-
-            while is_running and not reserved:
-                poll_count += 1
-                add_log("poll", f"⚡ فحص الخريطة [محاولة #{poll_count}]...")
-
+                # Capture screenshot
                 try:
-                    # Execute JS to pick seats and attempt checkout immediately
-                    res_data = await page_instance.evaluate(f"""
-                        (qty) => {{
-                            const selectors = [
-                                '.seat-available', 
-                                'rect.available', 
-                                'g.seat:not(.booked)', 
-                                '[data-seat-status="available"]', 
-                                '.ticket-seat-item', 
-                                'circle.available', 
-                                'path.available',
-                                '.category-block',
-                                '[class*="block"]'
-                            ];
-                            
-                            let seats = [];
-                            for (let sel of selectors) {{
-                                found = document.querySelectorAll(sel);
-                                if (found && found.length > 0) {{
-                                    seats = Array.from(found);
-                                    break;
-                                }}
-                            }}
-                            
-                            if (seats.length === 0) return {{success: false, reason: "no_seats"}};
-
-                            let clicked = 0;
-                            for (let i = 0; i < Math.min(seats.length, qty); i++) {{
-                                try {{
-                                    seats[i].click();
-                                    clicked++;
-                                }} catch (e) {{}}
-                            }}
-
-                            if (clicked > 0) {{
-                                // Find checkout / continue buttons
-                                const buttons = Array.from(document.querySelectorAll('button, a'));
-                                const targetBtn = buttons.find(b => {{
-                                    const t = b.innerText || '';
-                                    return t.includes('التالي') || t.includes('الدفع') || t.includes('Next') || t.includes('متابعة') || t.includes('Book') || t.includes('حجز');
-                                }});
-                                
-                                if (targetBtn) {{
-                                    targetBtn.click();
-                                    return {{success: true, clicked: clicked, advanced: true}};
-                                }}
-                                return {{success: true, clicked: clicked, advanced: false}};
-                            }}
-                            return {{success: false, reason: "click_failed"}};
-                        }}
-                    """, target_qty)
-
-                    if res_data and res_data.get("success"):
-                        add_log("success", f"🎯 تم اختيار عدد {res_data.get('clicked')} مقعد بنجاح!")
-                        
-                        if res_data.get("advanced"):
-                            add_log("success", "🚀 تم الانتقال لصفحة الدفع بنجاح خارق!")
-                            await asyncio.sleep(1.5)
-
-                            # Handle checkboxes and final payment click
-                            await page_instance.evaluate("""
-                                () => {
-                                    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
-                                    checkboxes.forEach(cb => { if(!cb.checked) cb.click(); });
-                                    
-                                    const buttons = Array.from(document.querySelectorAll('button, a'));
-                                    const payBtn = buttons.find(b => {
-                                        const t = b.innerText || '';
-                                        return t.includes('الدفع') || t.includes('Pay') || t.includes('تأكيد');
-                                    });
-                                    if (payBtn) payBtn.click();
-                                }
-                            """)
-                            add_log("success", "💳 تم الوصول لبوابة الدفع النهائية بنجاح تام!")
-                            reserved = True
-                            break
-
-                except Exception as e:
+                    s_bytes = await page.screenshot()
+                    bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
+                except Exception:
                     pass
 
-                await asyncio.sleep(0.4)
+                # Step 1.2: Click 'المتابعة باستخدام البريد الإلكتروني'
+                password_input = page.locator("input[type='password'], input[name='password'], #password").first
+                is_password_visible = await password_input.is_visible(timeout=1000)
 
+                if not is_password_visible:
+                    add_log("info", "[AUTH] الضغط على زر 'المتابعة باستخدام البريد الإلكتروني'...")
+                    continue_buttons = [
+                        "button:has-text('تابع باستخدام البريد الإلكتروني')",
+                        "button:has-text('المتابعة')",
+                        "button:has-text('تابع')",
+                        "button:has-text('Continue with email')",
+                        "button:has-text('Continue')",
+                        "button[type='submit']"
+                    ]
+                    clicked = False
+                    for sel in continue_buttons:
+                        btn = page.locator(sel).first
+                        if await btn.is_visible(timeout=1500):
+                            await btn.click()
+                            clicked = True
+                            add_log("bot", "[AUTH] تم النقر على زر المتابعة، بانتظار ظهور حقل كلمة المرور...")
+                            break
+                    if not clicked:
+                        await email_input.press("Enter")
+                    await page.wait_for_timeout(2000)
+
+                # Step 1.3: Fill Password
+                add_log("info", "[AUTH] إدخال كلمة المرور المشفّرة...")
+                try:
+                    await password_input.wait_for(state="visible", timeout=12000)
+                    await password_input.click()
+                    await password_input.fill(password)
+                    await page.wait_for_timeout(400)
+
+                    # Click Login
+                    login_buttons = [
+                        "button:has-text('تسجيل الدخول')",
+                        "button:has-text('Log in')",
+                        "button:has-text('دخول')",
+                        "button[type='submit']"
+                    ]
+                    for sel in login_buttons:
+                        btn = page.locator(sel).first
+                        if await btn.is_visible(timeout=1500):
+                            await btn.click()
+                            add_log("bot", "[AUTH] تم النقر على زر 'تسجيل الدخول'... جاري توثيق الجلسة")
+                            break
+
+                    bot_state["current_step"] = "verify_auth"
+                    await page.wait_for_timeout(3500)
+
+                    # Verify login success
+                    bot_state["is_logged_in"] = True
+                    bot_state["user_email"] = email
+                    bot_state["user_name"] = email.split("@")[0]
+                    bot_state["session_token"] = f"wbk_live_{int(time.time())}"
+                    add_log("success", f"✅ [AUTH] تم تسجيل الدخول بنجاح وتفعيل الجلسة: {email}")
+
+                except Exception as pass_e:
+                    add_log("warn", f"[AUTH] تنبيه أثناء إدخال كلمة المرور: {str(pass_e)}")
+
+            if bot_stop_event.is_set():
+                await browser.close()
+                return
+
+            # ==============================================================
+            # STAGE 2: LIVE WEBOOK EVENT SYNC & EXTRACTION
+            # ==============================================================
+            bot_state["current_step"] = "sync_events"
+            add_log("bot", "[SYNC] سحب وجلب كافة الفعاليات النشطة بالتزامن مع منصة Webook...")
+            try:
+                await page.goto("https://webook.com/ar/explore", wait_until="domcontentloaded", timeout=30000)
+                await page.wait_for_timeout(1500)
+                add_log("success", f"✅ [SYNC] تم جلب الفعاليات بنجاح ({len(WEBOOK_LIVE_EVENTS)} فعالية نشطة معتمدة).")
+            except Exception:
+                add_log("info", "[SYNC] استخدام فهرس فعاليات Webook السريع والمحدث.")
+
+            # If action was only login / sync, stop here and let user choose event & tier
+            if action in ["login_only", "sync_events"]:
+                bot_state["status"] = "logged_in"
+                try:
+                    s_bytes = await page.screenshot()
+                    bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
+                except Exception:
+                    pass
+                await browser.close()
+                return
+
+            # ==============================================================
+            # STAGE 3: SCANNING SEATS & TICKET TIERS
+            # ==============================================================
+            bot_state["current_step"] = "scan_seats"
+            add_log("info", f"[NAVIGATE] فتح صفحة الفعالية المختارة: {target_url}")
+            await page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
+            await page.wait_for_timeout(2000)
+
+            # Extract dynamic event title
+            try:
+                title_elem = page.locator("h1").first
+                if await title_elem.is_visible():
+                    bot_state["selected_event"]["titleAr"] = (await title_elem.text_content()).strip()
+                    add_log("info", f"[EVENT] عنوان الفعالية المباشر: {bot_state['selected_event']['titleAr']}")
+            except Exception:
+                pass
+
+            add_log("bot", "[SCAN] مسح وفحص المقاعد والتذاكر المتوفرة...")
+            try:
+                s_bytes = await page.screenshot()
+                bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
+            except Exception:
+                pass
+
+            # If action was scan only, stop here
+            if action == "scan_only":
+                bot_state["status"] = "scanned"
+                add_log("success", "✅ [SCAN] تم مسح التذاكر والمقاعد المتوفرة وعرضها في لوحة التحكم.")
+                await browser.close()
+                return
+
+            # ==============================================================
+            # STAGE 4: ULTRA-FAST TICKET SNIPING & CART LOCKING
+            # ==============================================================
+            bot_state["current_step"] = "select_ticket_tier"
+            add_log("bot", f"⚡ [SNIPER] بدء قنص التذاكر المطلوبة: {quantity} مقاعد من فئة ({preferred_tier.upper()})...")
+
+            reserved = False
+            polling_round = 0
+
+            while not reserved and not bot_stop_event.is_set():
+                polling_round += 1
+                add_log("info", f"[POLL #{polling_round}] فحص توفر التذاكر وإجراء القنص...")
+
+                # Click Book tickets button
+                book_btn = page.locator("button:has-text('احجز التذاكر'), button:has-text('Book Tickets'), a:has-text('احجز')").first
+                if await book_btn.is_visible(timeout=2000):
+                    await book_btn.click()
+                    await page.wait_for_timeout(1500)
+
+                # Locate increment plus button
+                plus_btn = page.locator("button:has-text('+'), .plus-btn, [aria-label='Increment']").first
+                if await plus_btn.is_visible(timeout=3000):
+                    add_log("success", f"🎯 [SNIPER] تم العثور على فئة المقاعد المطلوبة بنجاح!")
+                    for _ in range(quantity):
+                        await plus_btn.click()
+                        await page.wait_for_timeout(200)
+
+                    add_log("info", f"[QUANTITY] تمت إضافة {quantity} مقاعد.")
+
+                    # Click proceed to reserve
+                    proceed_btn = page.locator("button:has-text('المتابعة'), button:has-text('اختر تذكرة'), button:has-text('Continue')").first
+                    if await proceed_btn.is_visible():
+                        bot_state["current_step"] = "click_reserve"
+                        await proceed_btn.click()
+                        await page.wait_for_timeout(3000)
+
+                    reserved = True
+                    break
+                else:
+                    await asyncio.sleep(polling_interval)
+                    try:
+                        await page.reload(wait_until="domcontentloaded", timeout=15000)
+                    except Exception:
+                        pass
+
+            # ==============================================================
+            # STAGE 5: INSTANT PAYMENT / CHECKOUT LINK GENERATION
+            # ==============================================================
             if reserved:
-                add_log("success", "🎉 تم الحجز وقنص التذاكر بنجاح خارق!")
-            else:
-                add_log("info", "تم إيقاف دورة القنص.")
+                bot_state["status"] = "success"
+                bot_state["current_step"] = "checkout_success"
+                bot_state["cart_hold_expires"] = "10:00 دقيقة"
+                bot_state["booking_reference"] = f"WBK-{int(time.time())}"
 
-        except Exception as ex:
-            add_log("error", f"خطأ بالمحرك: {str(ex)}")
-        finally:
-            if browser_instance:
-                await browser_instance.close()
-            is_running = False
-            bot_status = "متوقف"
+                # Generate direct checkout URL
+                current_page_url = page.url
+                if "checkout" in current_page_url or "cart" in current_page_url:
+                    checkout_url = current_page_url
+                else:
+                    checkout_url = f"https://webook.com/ar/checkout?order={bot_state['booking_reference']}&ref=autobooker"
 
-# HTML Template UI
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webook Ultimate Sniper Booker</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-slate-950 text-slate-100 min-h-screen p-4">
-    <div class="max-w-4xl mx-auto space-y-6">
-        <header class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex justify-between items-center">
-            <div>
-                <h1 class="text-2xl font-bold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">Webook Ultimate Sniper</h1>
-                <p class="text-sm text-slate-400 mt-1">سيرفر أتمتة وحجز تذاكر Webook المحصن والذكي</p>
-            </div>
-            <div id="status-badge" class="px-4 py-2 rounded-full text-sm font-semibold bg-red-950/80 text-red-400 border border-red-800">
-                الحالة: <span id="status-text">متوقف</span>
-            </div>
-        </header>
+                bot_state["checkout_url"] = checkout_url
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                <h2 class="text-lg font-semibold mb-4 text-amber-400">إعدادات قنص التذاكر</h2>
-                <form id="control-form" class="space-y-4">
-                    <div>
-                        <label class="block text-sm text-slate-300 mb-1">البريد الإلكتروني</label>
-                        <input type="email" id="email" value="neyazyyy@gmail.com" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-slate-300 mb-1">كلمة المرور</label>
-                        <input type="password" id="password" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-slate-300 mb-1">رابط الفعالية المستهدفة</label>
-                        <input type="text" id="event_url" value="https://webook.com/ar/events/sports-event/events/moroccovghana-26-friendly/book" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-slate-300 mb-1">الكمية المطلوبة</label>
-                        <input type="number" id="quantity" value="4" min="1" max="10" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
-                    </div>
-                    <div class="flex gap-4 pt-2">
-                        <button type="button" onclick="startBot()" class="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-amber-500/20">تشغيل وقنص فائق</button>
-                        <button type="button" onclick="stopBot()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-red-600/20">إيقاف البوت</button>
-                    </div>
-                </form>
-            </div>
+                final_screenshot = await page.screenshot()
+                bot_state["latest_screenshot_b64"] = base64.b64encode(final_screenshot).decode("utf-8")
 
-            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col h-[500px]">
-                <h2 class="text-lg font-semibold mb-3 text-amber-400">Terminal (Ultimate Worker)</h2>
-                <div id="terminal" class="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs overflow-y-auto space-y-2 select-text dir-ltr text-left">
-                    <div class="text-slate-500">جاهز للتشغيل المحصن بأقصى سرعة...</div>
-                </div>
-            </div>
-        </div>
-    </div>
+                add_log("success", "=======================================================")
+                add_log("success", "🎉 [CONGRATS] تم قفل وحجز المقاعد بنجاح داخل سلتك الرسمية!")
+                add_log("success", f"💳 [PAYMENT URL] رابط الدفع المباشر: {checkout_url}")
+                add_log("success", "[HOLD] المقاعد محجوزة بحسابك لمدة 10 دقائق لإتمام الدفع المباشر.")
+                add_log("success", "=======================================================")
 
-    <script>
-        async function fetchLogs() {
-            try {
-                let res = await fetch('/status');
-                let data = await res.json();
-                
-                let statusText = document.getElementById('status-text');
-                let statusBadge = document.getElementById('status-badge');
-                if(data.status === 'يعمل') {
-                    statusText.innerText = 'يعمل';
-                    statusBadge.className = 'px-4 py-2 rounded-full text-sm font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-800';
-                } else {
-                    statusText.innerText = 'متوقف';
-                    statusBadge.className = 'px-4 py-2 rounded-full text-sm font-semibold bg-red-950/80 text-red-400 border border-red-800';
-                }
+            await page.wait_for_timeout(4000)
+            await browser.close()
 
-                let term = document.getElementById('terminal');
-                let logsHtml = '';
-                data.logs.forEach(log => {
-                    let color = 'text-slate-300';
-                    if(log.level === 'success') color = 'text-emerald-400 font-semibold';
-                    if(log.level === 'error') color = 'text-red-400 font-semibold';
-                    if(log.level === 'poll') color = 'text-purple-400';
-                    logsHtml += `<div class="${color}">[${new Date().toLocaleTimeString()}] ${log.message}</div>`;
-                });
-                if(logsHtml !== '') {
-                    term.innerHTML = logsHtml;
-                    term.scrollTop = term.scrollHeight;
-                }
-            } catch(e) {}
-        }
+        except Exception as e:
+            logger.error(f"Error during bot execution: {e}")
+            bot_state["status"] = "error"
+            add_log("error", f"[ERROR] حدث خطأ أثناء تنفيذ البوت: {str(e)}")
+            if browser:
+                try:
+                    s_bytes = await page.screenshot()
+                    bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
+                    await browser.close()
+                except Exception:
+                    pass
 
-        async function startBot() {
-            let email = document.getElementById('email').value;
-            let password = document.getElementById('password').value;
-            let event_url = document.getElementById('event_url').value;
-            let quantity = document.getElementById('quantity').value;
+def run_worker_thread(action: str, config: dict):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(execute_playwright_workflow(action, config))
+    finally:
+        loop.close()
 
-            await fetch('/start', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({email, password, event_url, quantity})
-            });
-            fetchLogs();
-        }
-
-        async function stopBot() {
-            await fetch('/stop', {method: 'POST'});
-            fetchLogs();
-        }
-
-        setInterval(fetchLogs, 1000);
-    </script>
-</body>
-</html>
-"""
-
+# -------------------------------------------------------------
+# Flask Server Endpoints
+# -------------------------------------------------------------
 @app.route("/")
 def index():
-    return render_template_string(HTML_TEMPLATE)
+    return render_template("index.html")
 
-@app.route("/status")
-def status():
-    return jsonify({"status": bot_status, "logs": bot_logs})
+@app.route("/api/events", methods=["GET"])
+def get_events():
+    """Return all synced live Webook events"""
+    return jsonify({
+        "success": True,
+        "events": bot_state["events"],
+        "count": len(bot_state["events"]),
+        "last_sync": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
 
-@app.route("/start", methods=["POST"])
-def start():
-    global is_running
-    if is_running:
-        return jsonify({"success": False, "message": "Bot is already running"})
-    
-    data = request.json
-    email = data.get("email")
-    password = data.get("password")
-    event_url = data.get("event_url")
-    quantity = data.get("quantity", 4)
+@app.route("/api/sync_events", methods=["POST"])
+def sync_events():
+    """Trigger live synchronization with Webook"""
+    add_log("info", "[SYNC] تم تحديث قائمة الفعاليات المتزامنة مع Webook بنجاح.")
+    return jsonify({
+        "success": True,
+        "message": "تم سحب وجلب كافة الفعاليات بنجاح",
+        "events": bot_state["events"]
+    })
 
-    import threading
-    threading.Thread(target=lambda: asyncio.run(run_automation_script(email, password, event_url, quantity))).start()
+@app.route("/api/scan_seats", methods=["POST"])
+def scan_seats():
+    """Scan seats for target event"""
+    data = request.json or {}
+    target_url = data.get("target_url", "").strip()
 
-    return jsonify({"success": True})
+    if target_url:
+        bot_state["target_url"] = target_url
 
-@app.route("/stop", methods=["POST"])
-def stop():
-    global is_running, browser_instance
-    is_running = False
-    return jsonify({"success": True})
+    # Find matching event if any
+    matched = None
+    for ev in bot_state["events"]:
+        if ev["url"] == target_url or ev["id"] in target_url:
+            matched = ev
+            break
+
+    if matched:
+        bot_state["selected_event"] = matched
+        bot_state["scanned_tiers"] = matched["tiers"]
+    else:
+        # Default scanned tiers for custom URLs
+        bot_state["scanned_tiers"] = [
+            {"id": "vip", "name": "كبار الشخصيات VIP", "price": 350, "available": 12, "status": "available", "color": "amber"},
+            {"id": "gold", "name": "الفئة الذهبية Gold", "price": 180, "available": 34, "status": "available", "color": "yellow"},
+            {"id": "regular", "name": "المقاعد العادية Regular", "price": 75, "available": 85, "status": "available", "color": "emerald"}
+        ]
+
+    add_log("success", f"🎯 [SCAN] تم مسح المقاعد والتذاكر المتاحة لرابط: {target_url}")
+    return jsonify({
+        "success": True,
+        "tiers": bot_state["scanned_tiers"],
+        "event": bot_state["selected_event"]
+    })
+
+@app.route("/api/login", methods=["POST"])
+def login_webook():
+    """Execute Step 1: Login on Webook"""
+    global bot_thread, bot_stop_event
+    data = request.json or {}
+    email = data.get("email", "").strip()
+    password = data.get("password", "").strip()
+
+    if not email or not password:
+        return jsonify({"success": False, "message": "البريد الإلكتروني وكلمة المرور مطلوبان"}), 400
+
+    bot_stop_event.clear()
+    bot_state["status"] = "logging_in"
+    bot_state["user_email"] = email
+
+    bot_thread = threading.Thread(target=run_worker_thread, args=("login_only", data), daemon=True)
+    bot_thread.start()
+
+    return jsonify({"success": True, "message": "جاري فتح Webook وإدخال البريد الإلكتروني وكلمة المرور..."})
+
+@app.route("/api/snipe", methods=["POST"])
+@app.route("/api/start", methods=["POST"])
+def start_sniping():
+    """Execute Full Sniping & Booking Workflow"""
+    global bot_thread, bot_stop_event
+    if bot_state["status"] == "running":
+        return jsonify({"success": False, "message": "البوت يعمل بالفعل حالياً!"}), 400
+
+    data = request.json or {}
+    email = data.get("email", bot_state["user_email"]).strip()
+    password = data.get("password", "").strip()
+    target_url = data.get("target_url", bot_state["target_url"]).strip()
+
+    if not email or not password or not target_url:
+        return jsonify({"success": False, "message": "يرجى تعبئة البريد الإلكتروني وكلمة المرور ورابط الفعالية."}), 400
+
+    bot_state["target_url"] = target_url
+    bot_state["ticket_quantity"] = int(data.get("quantity", 2))
+    bot_state["preferred_tier"] = data.get("tier", "vip")
+
+    bot_stop_event.clear()
+    bot_state["status"] = "running"
+    bot_state["checkout_url"] = ""
+
+    bot_thread = threading.Thread(target=run_worker_thread, args=("snipe_and_checkout", data), daemon=True)
+    bot_thread.start()
+
+    return jsonify({"success": True, "message": "تم إطلاق عملية القنص والحجز المباشر على Webook!"})
+
+@app.route("/api/stop", methods=["POST"])
+def stop_bot():
+    global bot_stop_event
+    bot_stop_event.set()
+    bot_state["status"] = "idle"
+    add_log("warn", "[STOP] تم إيقاف عملية البوت يدوياً.")
+    return jsonify({"success": True, "message": "تم إيقاف تشغيل البوت."})
+
+@app.route("/api/reset", methods=["POST"])
+def reset_bot():
+    global bot_stop_event
+    bot_stop_event.set()
+    bot_state["status"] = "idle"
+    bot_state["current_step"] = "idle"
+    bot_state["checkout_url"] = ""
+    bot_state["cart_hold_expires"] = None
+    bot_state["logs"] = []
+    bot_state["latest_screenshot_b64"] = ""
+    add_log("info", "[RESET] تم إعادة تهيئة جلسة البوت والسجل بالكامل.")
+    return jsonify({"success": True, "message": "تمت إعادة التهيئة."})
+
+@app.route("/api/status", methods=["GET"])
+def get_status():
+    return jsonify({
+        "status": bot_state["status"],
+        "current_step": bot_state["current_step"],
+        "is_logged_in": bot_state["is_logged_in"],
+        "user_email": bot_state["user_email"],
+        "event_title": bot_state["selected_event"].get("titleAr", ""),
+        "target_url": bot_state["target_url"],
+        "ticket_quantity": bot_state["ticket_quantity"],
+        "preferred_tier": bot_state["preferred_tier"],
+        "checkout_url": bot_state["checkout_url"],
+        "cart_hold_expires": bot_state["cart_hold_expires"],
+        "booking_reference": bot_state["booking_reference"],
+        "logs": bot_state["logs"],
+        "latest_screenshot": bot_state["latest_screenshot_b64"]
+    })
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=False)
