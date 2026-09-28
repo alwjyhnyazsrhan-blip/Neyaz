@@ -180,7 +180,7 @@
       <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
         <p class="text-[11px] text-slate-400 flex items-center gap-1.5">
           <span>🔒</span>
-          <span>يتعامل البوت تلقائياً مع نظام تسجيل الدخول الرسمي المكون من خطوتين: البريد ⬅️ زر المتابعة ⬅️ كلمة المرور ⬅️ تجاوز الكوكيز والحماية.</span>
+          <span>يتعامل البوت تلقائياً مع نظام تسجيل الدخول الرسمي: البريد ⬅️ زر المتابعة ⬅️ كلمة المرور ⬅️ حذف نوافذ الكوكيز قسرياً.</span>
         </p>
 
         <button
@@ -218,22 +218,6 @@
         </div>
       </div>
 
-      <!-- Category Filter Pills -->
-      <div class="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-        <button onclick="filterEvents('all')" id="catAll" class="px-3 py-1.5 rounded-xl font-bold bg-purple-600 text-white shrink-0">
-          الكل (عرض جميع الفعاليات)
-        </button>
-        <button onclick="filterEvents('sports')" id="catSports" class="px-3 py-1.5 rounded-xl font-bold bg-slate-900 border border-slate-800 text-slate-400 shrink-0">
-          ⚽ مباريات كرة القدم ودوري روشن
-        </button>
-        <button onclick="filterEvents('entertainment')" id="catEnt" class="px-3 py-1.5 rounded-xl font-bold bg-slate-900 border border-slate-800 text-slate-400 shrink-0">
-          🎪 موسم الرياض وبوليفارد وورلد
-        </button>
-        <button onclick="filterEvents('music')" id="catMusic" class="px-3 py-1.5 rounded-xl font-bold bg-slate-900 border border-slate-800 text-slate-400 shrink-0">
-          🎤 الحفلات والمسارح
-        </button>
-      </div>
-
       <!-- Events Cards Grid -->
       <div id="eventsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <!-- Injected via JavaScript -->
@@ -245,16 +229,16 @@
         <input
           id="customUrlInput"
           type="url"
-          placeholder="https://webook.com/ar/events/..."
+          placeholder="https://webook.com/en/SA/RUH/sports-event/events/..."
           class="flex-1 w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 font-mono"
           dir="ltr"
         />
         <button
           type="button"
           onclick="applyCustomUrl()"
-          class="w-full sm:w-auto px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition cursor-pointer"
+          class="w-full sm:w-auto px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl shadow-lg transition cursor-pointer"
         >
-          اعتماد الرابط ومسح المقاعد
+          اعتماد الرابط ومسح المقاعد الآن
         </button>
       </div>
     </section>
@@ -267,8 +251,8 @@
             3
           </span>
           <div>
-            <h2 class="text-sm font-black text-white">مسح المقاعد والتذاكر المتوفرة وتحديد طلبك</h2>
-            <p class="text-[11px] text-slate-400">يفحص البوت فئات التذاكر المتاحة فورياً لتختار المقاعد التي تريد قنصها</p>
+            <h2 class="text-sm font-black text-white">مسح المقاعد والتذاكر الحقيقية وتحديد طلبك</h2>
+            <p class="text-[11px] text-slate-400">يسحب البوت فئات التذاكر الحقيقية والمتاحة مباشرة من سيرفر Webook</p>
           </div>
         </div>
 
@@ -282,7 +266,7 @@
         </button>
       </div>
 
-      <!-- Scanned Tiers Grid -->
+      <!-- Scanned Tiers Grid (Empty until scanned!) -->
       <div id="tiersContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <!-- Injected via JavaScript -->
       </div>
@@ -313,7 +297,7 @@
 
         <div class="text-xs text-slate-400">
           <span>الفئة المختارة للقنص:</span>
-          <strong id="selectedTierLabel" class="text-amber-300 font-bold mr-1">كبار الشخصيات VIP</strong>
+          <strong id="selectedTierLabel" class="text-amber-300 font-bold mr-1">بانتظار المسح</strong>
         </div>
       </div>
     </section>
@@ -327,7 +311,7 @@
         <div>
           <h3 class="text-base sm:text-lg font-black text-white">4. تنفيذ القنص والحجز الفوري على Webook</h3>
           <p class="text-xs text-slate-300 mt-0.5">
-            عند الضغط، ينطلق محرك Playwright لتخطي الطابور واختيار المقاعد وحجزها وتوليد رابط الدفع المباشر فوراً.
+            ينطلق محرك Playwright لحذف نوافذ الكوكيز وتخطي الطابور واختيار المقاعد وحجزها وتوليد رابط الدفع المباشر فوراً.
           </p>
         </div>
       </div>
@@ -441,7 +425,7 @@
   <script>
     let eventsList = [];
     let selectedEvent = null;
-    let selectedTier = 'vip';
+    let selectedTier = '';
     let ticketQuantity = 2;
     let currentCheckoutUrl = '';
     let cartCountdownInterval = null;
@@ -450,7 +434,23 @@
     document.addEventListener('DOMContentLoaded', () => {
       fetchEvents();
       setInterval(updateStatus, 1500);
+      renderEmptyTiersPrompt();
     });
+
+    function renderEmptyTiersPrompt() {
+      const container = document.getElementById('tiersContainer');
+      container.innerHTML = `
+        <div class="col-span-full py-10 px-4 text-center border-2 border-dashed border-slate-800 rounded-2xl bg-slate-950/40">
+          <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 mx-auto flex items-center justify-center mb-2 text-xl">
+            🎫
+          </div>
+          <h4 class="text-xs font-bold text-white mb-1">لم يتم فحص الفعالية بعد</h4>
+          <p class="text-[11px] text-slate-400 max-w-md mx-auto">
+            لا توجد فئات تذاكر وهمية أو ثابتة. اضغط على زر <strong class="text-amber-400">"مسح وفحص المقاعد المتوفرة الآن"</strong> ليقوم البوت بفتح الرابط الحقيقي وسحب الفئات المتاحة مباشرة من Webook.
+          </p>
+        </div>
+      `;
+    }
 
     async function fetchEvents() {
       try {
@@ -460,7 +460,9 @@
           eventsList = data.events;
           renderEvents(eventsList);
           if (eventsList.length > 0 && !selectedEvent) {
-            selectEvent(eventsList[0]);
+            selectedEvent = eventsList[0];
+            document.getElementById('customUrlInput').value = selectedEvent.url;
+            renderEvents(eventsList);
           }
         }
       } catch (e) {
@@ -537,37 +539,27 @@
       selectedEvent = ev;
       document.getElementById('customUrlInput').value = ev.url;
       renderEvents(eventsList);
-      renderTiers(ev.tiers || []);
       highlightStep('step2', true);
-    }
-
-    function filterEvents(category) {
-      ['catAll', 'catSports', 'catEnt', 'catMusic'].forEach(id => {
-        document.getElementById(id).className = 'px-3 py-1.5 rounded-xl font-bold bg-slate-900 border border-slate-800 text-slate-400 shrink-0';
-      });
-
-      if (category === 'all') {
-        document.getElementById('catAll').className = 'px-3 py-1.5 rounded-xl font-bold bg-purple-600 text-white shrink-0';
-        renderEvents(eventsList);
+      if (ev.scannedTiers && ev.scannedTiers.length > 0) {
+        renderTiers(ev.scannedTiers);
       } else {
-        const idMap = { sports: 'catSports', entertainment: 'catEnt', music: 'catMusic' };
-        if (idMap[category]) {
-          document.getElementById(idMap[category]).className = 'px-3 py-1.5 rounded-xl font-bold bg-purple-600 text-white shrink-0';
-        }
-        const filtered = eventsList.filter(e => e.categoryKey === category);
-        renderEvents(filtered);
+        renderEmptyTiersPrompt();
       }
     }
 
     async function applyCustomUrl() {
       const url = document.getElementById('customUrlInput').value.trim();
-      if (!url) return;
+      if (!url) {
+        alert('يرجى كتابة أو لصق رابط الفعالية في Webook');
+        return;
+      }
       
       const container = document.getElementById('tiersContainer');
       container.innerHTML = `
-        <div class="col-span-full py-8 text-center text-slate-400 text-xs">
-          <div class="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-          جاري فحص رابط الفعالية وسحب فئات التذاكر الحقيقية من Webook...
+        <div class="col-span-full py-10 text-center text-slate-300 text-xs bg-slate-950/60 rounded-2xl border border-slate-800">
+          <div class="w-8 h-8 border-3 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+          <p class="font-bold text-white mb-1">جاري فتح صفحة Webook وفحص الفئات الحقيقية بالمتصفح...</p>
+          <p class="text-[11px] text-slate-500 font-mono">${url}</p>
         </div>
       `;
 
@@ -578,10 +570,17 @@
           body: JSON.stringify({ target_url: url })
         });
         const data = await res.json();
-        if (data.success && data.tiers) {
+        if (data.success && data.tiers && data.tiers.length > 0) {
           selectedEvent = data.event || { id: 'custom-' + Date.now(), url: url, titleAr: 'فعالية Webook' };
+          selectedEvent.scannedTiers = data.tiers;
           renderTiers(data.tiers);
           highlightStep('step3', true);
+        } else {
+          container.innerHTML = `
+            <div class="col-span-full py-8 text-center text-amber-400 text-xs bg-slate-950 rounded-2xl border border-amber-500/30">
+              تم فحص الصفحة: التذاكر لم تُطرح بعد أو أن المقاعد بانتظار فتح البيع المباشر على Webook.
+            </div>
+          `;
         }
       } catch (e) {
         console.error('Scan error:', e);
@@ -590,6 +589,16 @@
 
     function renderTiers(tiers) {
       const container = document.getElementById('tiersContainer');
+      if (!tiers || tiers.length === 0) {
+        renderEmptyTiersPrompt();
+        return;
+      }
+
+      if (!selectedTier && tiers.length > 0) {
+        selectedTier = tiers[0].id;
+        document.getElementById('selectedTierLabel').textContent = tiers[0].name;
+      }
+
       container.innerHTML = tiers.map(t => {
         const isSelected = selectedTier === t.id;
         return `
@@ -630,8 +639,8 @@
     function selectTier(tierId, tierName) {
       selectedTier = tierId;
       document.getElementById('selectedTierLabel').textContent = tierName;
-      if (selectedEvent && selectedEvent.tiers) {
-        renderTiers(selectedEvent.tiers);
+      if (selectedEvent && selectedEvent.scannedTiers) {
+        renderTiers(selectedEvent.scannedTiers);
       }
     }
 
@@ -668,6 +677,20 @@
 
     async function scanSeats() {
       const targetUrl = document.getElementById('customUrlInput').value.trim() || (selectedEvent && selectedEvent.url);
+      if (!targetUrl) {
+        alert('يرجى اختيار فعالية أو إدخال رابط الفعالية في Webook');
+        return;
+      }
+
+      const container = document.getElementById('tiersContainer');
+      container.innerHTML = `
+        <div class="col-span-full py-10 text-center text-slate-300 text-xs bg-slate-950/60 rounded-2xl border border-slate-800">
+          <div class="w-8 h-8 border-3 border-amber-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+          <p class="font-bold text-white mb-1">جاري فتح صفحة الفعالية وفحص المقاعد والتذاكر الحقيقية...</p>
+          <p class="text-[11px] text-slate-500 font-mono">${targetUrl}</p>
+        </div>
+      `;
+
       try {
         const res = await fetch('/api/scan_seats', {
           method: 'POST',
@@ -675,12 +698,24 @@
           body: JSON.stringify({ target_url: targetUrl })
         });
         const data = await res.json();
-        if (data.tiers) {
+        if (data.tiers && data.tiers.length > 0) {
+          if (selectedEvent) selectedEvent.scannedTiers = data.tiers;
           renderTiers(data.tiers);
           highlightStep('step3', true);
+        } else {
+          container.innerHTML = `
+            <div class="col-span-full py-8 text-center text-rose-400 text-xs bg-slate-950 rounded-2xl border border-rose-500/30">
+              لم يتم العثور على مقاعد متاحة للبيع المباشر حالياً، أو بانتظار طرح التذاكر.
+            </div>
+          `;
         }
       } catch (e) {
         console.error(e);
+        container.innerHTML = `
+          <div class="col-span-full py-8 text-center text-rose-400 text-xs bg-slate-950 rounded-2xl border border-rose-500/30">
+            حدث خطأ أثناء الاتصال: ${e.message}
+          </div>
+        `;
       }
     }
 
@@ -702,7 +737,7 @@
             email,
             password,
             target_url: targetUrl,
-            tier: selectedTier,
+            tier: selectedTier || 'vip',
             quantity: ticketQuantity
           })
         });
@@ -735,6 +770,7 @@
         document.getElementById('logsTerminal').innerHTML = '<div class="text-slate-500 py-6 text-center text-xs" dir="rtl">تمت إعادة تعيين الجلسة والسجل.</div>';
         document.getElementById('screenshotImg').classList.add('hidden');
         document.getElementById('screenshotPlaceholder').classList.remove('hidden');
+        renderEmptyTiersPrompt();
       } catch (e) {}
     }
 
@@ -751,7 +787,7 @@
 
     function startCartTimer() {
       if (cartCountdownInterval) clearInterval(cartCountdownInterval);
-      let seconds = 600; // 10 minutes
+      let seconds = 600;
       cartCountdownInterval = setInterval(() => {
         seconds--;
         if (seconds <= 0) {
@@ -772,7 +808,6 @@
         if (!res.ok) return;
         const data = await res.json();
 
-        // Status Pill
         const dot = document.getElementById('statusDot');
         const text = document.getElementById('statusText');
         const bottomStatus = document.getElementById('bottomStatus');
@@ -797,7 +832,6 @@
           document.getElementById('snipeBtn').classList.remove('hidden');
           document.getElementById('stopBtn').classList.add('hidden');
 
-          // SHOW DIRECT PAYMENT LINK BANNER!
           if (data.checkout_url) {
             currentCheckoutUrl = data.checkout_url;
             const banner = document.getElementById('paymentSuccessBanner');
@@ -816,7 +850,6 @@
           document.getElementById('stopBtn').classList.add('hidden');
         }
 
-        // Stepper Highlights
         const step = data.current_step;
         if (['init_driver', 'navigate_login', 'fill_credentials', 'verify_auth'].includes(step)) {
           highlightStep('step1', true);
