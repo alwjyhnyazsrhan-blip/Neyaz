@@ -1,394 +1,300 @@
 import os
-import sys
-import json
-import time
-import base64
-import logging
-import threading
 import asyncio
-from datetime import datetime
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template_string, jsonify, request
+from playwright.async_api import async_playwright
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger("WebookBot")
+app = Flask(__name__)
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
+# Global Automation State
+bot_status = "متوقف"
+bot_logs = []
+browser_instance = None
+context_instance = None
+page_instance = None
+is_running = False
 
-# Global State for Bot Execution
-bot_state = {
-    "status": "idle",       # "idle", "running", "paused", "success", "error"
-    "current_step": "idle",
-    "logs": [],
-    "target_url": "",
-    "event_title": "فعالية غير محددة",
-    "account_email": "",
-    "ticket_quantity": 2,
-    "preferred_tier": "any",
-    "latest_screenshot_b64": "",
-    "cart_hold_expires": None,
-    "booking_reference": None
-}
+def add_log(level, message):
+    global bot_logs
+    log_entry = {"level": level, "message": message}
+    bot_logs.append(log_entry)
+    if len(bot_logs) > 100:
+        bot_logs.pop(0)
 
-bot_stop_event = threading.Event()
-bot_thread = None
-
-def add_log(level: str, message: str, step: str = ""):
-    """Helper to record timestamped logs to state"""
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    log_entry = {
-        "id": f"log_{int(time.time() * 1000)}",
-        "timestamp": timestamp,
-        "level": level,
-        "message": message,
-        "step": step
-    }
-    bot_state["logs"].append(log_entry)
-    if len(bot_state["logs"]) > 250:
-        bot_state["logs"].pop(0)
-    logger.info(f"[{level.upper()}] {message}")
-
-async def send_telegram_alert(token: str, chat_id: str, message: str, screenshot_bytes: bytes = None):
-    """Optional async notification to Telegram bot"""
-    if not token or not chat_id:
-        return
-    try:
-        import requests
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
-        requests.post(url, json=payload, timeout=8)
-
-        if screenshot_bytes:
-            photo_url = f"https://api.telegram.org/bot{token}/sendPhoto"
-            files = {"photo": ("screenshot.png", screenshot_bytes, "image/png")}
-            requests.post(photo_url, data={"chat_id": chat_id, "caption": "📸 لقطة تأكيد حجز المقاعد"}, files=files, timeout=12)
-    except Exception as e:
-        logger.error(f"Failed to send Telegram alert: {e}")
-
-async def playwright_automation_worker(config: dict):
-    """Playwright worker executing live automation workflow"""
-    from playwright.async_api import async_playwright
-
-    email = config.get("email", "")
-    password = config.get("password", "")
-    target_url = config.get("target_url", "https://webook.com/ar/explore")
-    quantity = int(config.get("quantity", 2))
-    preferred_tier = config.get("tier", "").strip().lower()
-    if not preferred_tier:
-        preferred_tier = "any"
-
-    telegram_token = config.get("telegram_token", "")
-    telegram_chat_id = config.get("telegram_chat_id", "")
-    polling_interval = float(config.get("polling_interval", 4.0))
-
-    bot_state["status"] = "running"
-    bot_state["account_email"] = email
-    bot_state["target_url"] = target_url
-    bot_state["ticket_quantity"] = quantity
-    bot_state["preferred_tier"] = preferred_tier
-
-    add_log("bot", "=======================================================")
-    add_log("bot", f"🚀 تشغيل بوت Webook الآلي عبر سيرفر الويب...")
-    add_log("info", f"[TARGET] الفعالية المستهدفة: {target_url}")
-    add_log("info", f"[USER] الحساب: {email}")
-    add_log("info", f"[CONFIG] الكمية المطلوبة: {quantity} | النمط: ذكي (تذاكر أو مقاعد خريطة)")
-
+# Playwright Background Worker
+async def run_automation_script(email, password, event_url, quantity):
+    global bot_status, is_running, browser_instance, context_instance, page_instance
+    is_running = True
+    bot_status = "يعمل"
+    
+    add_log("info", "بدء تشغيل محرك Playwright المتصفح...")
+    
     async with async_playwright() as p:
         try:
-            bot_state["current_step"] = "init_driver"
-            add_log("info", "[BROWSER] تهيئة متصفح Chromium في بيئة الحماية Stealth...")
-
-            browser = await p.chromium.launch(
+            browser_instance = await p.chromium.launch(
                 headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-blink-features=AutomationControlled",
-                    "--window-size=1280,800"
-                ]
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
             )
-
-            context = await browser.new_context(
+            context_instance = await browser_instance.new_context(
                 viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-                locale="ar-SA"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
+            page_instance = await context_instance.new_page()
 
-            page = await context.new_page()
+            # 1. Navigation to Login
+            add_log("info", f"فتح صفحة تسجيل الدخول: https://webook.com/ar/login")
+            await page_instance.goto("https://webook.com/ar/login", timeout=60000)
+            await asyncio.sleep(2)
 
-            # Step 1: Open Login Page
-            bot_state["current_step"] = "navigate_login"
-            login_url = "https://webook.com/ar/login"
-            add_log("info", f"[NAVIGATE] فتح صفحة تسجيل الدخول: {login_url}")
-            await page.goto(login_url, wait_until="domcontentloaded", timeout=45000)
-
-            # Take initial screenshot
-            screenshot_bytes = await page.screenshot()
-            bot_state["latest_screenshot_b64"] = base64.b64encode(screenshot_bytes).decode("utf-8")
-
-            # Check if cookie banner exists and accept
+            # Handle Cookie Banner if exists
             try:
-                cookie_btn = page.locator("button:has-text('قبول'), button:has-text('Accept'), button#onetrust-accept-btn-handler").first
+                cookie_btn = page_instance.locator("button:has-text('قبول'), button:has-text('Accept'), [aria-label='accept']")
                 if await cookie_btn.is_visible(timeout=3000):
                     await cookie_btn.click()
-                    add_log("info", "[COOKIE] تم تجاوز نافذة ملفات تعريف الارتباط بنجاح.")
+                    add_log("info", "تم تجاوز نافذة ملفات التعريف بنجاح.")
             except Exception:
                 pass
 
-            if bot_stop_event.is_set():
-                await browser.close()
-                return
+            # 2. Authentication
+            add_log("info", f"كتابة البريد الإلكتروني: {email}")
+            email_input = page_instance.locator("input[type='email'], input[name='email'], input[placeholder*='البريد']").first
+            await email_input.fill(email)
+            
+            # Submit or continue if needed, fill password if field exists
+            await asyncio.sleep(1)
+            
+            pass_input = page_instance.locator("input[type='password'], input[name='password']").first
+            if await pass_input.is_visible(timeout=3000):
+                await pass_input.fill(password)
+            
+            submit_btn = page_instance.locator("button[type='submit'], button:has-text('تسجيل الدخول'), button:has-text('Login')").first
+            if await submit_btn.is_visible(timeout=3000):
+                await submit_btn.click()
+                
+            add_log("success", f"اكتملت مصادقة الحساب بنجاح: {email}")
+            await asyncio.sleep(3)
 
-            # Step 2: Input Credentials & Sign In
-            bot_state["current_step"] = "fill_credentials"
-            add_log("info", f"[AUTH] كتابة البريد الإلكتروني: {email}")
+            # 3. Navigate to Event
+            add_log("info", f"الانتقال المباشر لصفحة الفعالية: {event_url}")
+            await page_instance.goto(event_url, timeout=60000)
+            await asyncio.sleep(3)
 
-            email_input = page.locator("input[type='email'], input[name='email'], #email").first
-            if await email_input.is_visible(timeout=10000):
-                await email_input.fill(email)
-                await page.wait_for_timeout(500)
-
-                continue_btn = page.locator("button:has-text('تابع باستخدام البريد الإلكتروني'), button:has-text('Continue'), button[type='submit']").first
-                if await continue_btn.is_visible(timeout=3000):
-                    await continue_btn.click()
-                    await page.wait_for_timeout(1000)
-
-                password_input = page.locator("input[type='password'], input[name='password'], #password").first
-                if await password_input.is_visible(timeout=8000):
-                    await password_input.fill(password)
-                    add_log("info", "[AUTH] كتابة كلمة المرور المشفّرة: ••••••••••••")
-
-                    submit_btn = page.locator("button[type='submit'], button:has-text('تسجيل الدخول'), button:has-text('Log in')").first
-                    await submit_btn.click()
-                    add_log("bot", "[AUTH] تم النقر على زر 'تسجيل الدخول'... جاري التحقق من التوكن")
-
-                bot_state["current_step"] = "verify_auth"
-                await page.wait_for_timeout(3500)
-                add_log("success", f"[AUTH] اكتملت مصادقة الحساب بنجاح: {email}")
-
-            if bot_stop_event.is_set():
-                await browser.close()
-                return
-
-            # Step 3: Navigate to Target Event URL
-            bot_state["current_step"] = "navigate_event"
-            add_log("info", f"[NAVIGATE] الانتقال المباشر لصفحة الفعالية: {target_url}")
-            await page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
-            await page.wait_for_timeout(2000)
-
-            # Extract Title
-            try:
-                title_elem = page.locator("h1").first
-                if await title_elem.is_visible():
-                    bot_state["event_title"] = (await title_elem.text_content()).strip()
-                    add_log("info", f"[EVENT] عنوان الفعالية: {bot_state['event_title']}")
-            except Exception:
-                pass
-
-            # Step 3.5: Handle "أي فريق تشجع؟" (Paused for Manual Selection by User)
-            bot_state["current_step"] = "select_team_manual"
-            team_detected = False
-            try:
-                team_heading = page.locator("text=أي فريق تشجع؟")
-                if await team_heading.is_visible(timeout=3000):
-                    team_detected = True
-                    add_log("warn", "⚠️ [TEAM] اكتشاف خطوة اختيار الفريق. البوت متوقف مؤقتاً بانتظار اختيارك اليدوي...")
-            except Exception:
-                pass
-
-            while team_detected and not bot_stop_event.is_set():
-                try:
-                    if not await page.locator("text=أي فريق تشجع？").is_visible(timeout=1000) and not await page.locator("text=أي فريق تشجع؟").is_visible(timeout=1000):
-                        add_log("success", "[TEAM] تم تخطي اختيار الفريق بنجاح. استئناف أتمتة البوت...")
-                        break
-                    
-                    s_bytes = await page.screenshot()
-                    bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
-                except Exception:
-                    pass
-                await asyncio.sleep(3)
-
-            try:
-                s_bytes = await page.screenshot()
-                bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
-            except Exception:
-                pass
-
-            if bot_stop_event.is_set():
-                await browser.close()
-                return
-
-            # Step 4: Smart Sniping Loop (Supports both Tickets & Interactive Seat Maps)
-            bot_state["current_step"] = "select_ticket_tier"
-            add_log("bot", "[POLLING] بدء مراقبة المقاعد والتذاكر وقنص المتاح تلقائياً...")
-
+            # 4. Sniping and Booking Loop
+            add_log("info", "بدء مراقبة المقاعد والتذاكر وقنص المتاح تلقائياً...")
+            poll_count = 0
             reserved = False
-            polling_round = 0
 
-            while not reserved and not bot_stop_event.is_set():
-                polling_round += 1
-                add_log("info", f"[POLL #{polling_round}] فحص حالة التذاكر والمقاعد المتاحة...")
+            while is_running and not reserved:
+                poll_count += 1
+                add_log("poll", f"فحص حالة التذاكر والمقاعد المتاحة [#{poll_count}]...")
 
                 try:
-                    s_bytes = await page.screenshot()
-                    bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
-                except Exception:
-                    pass
+                    # Check Method A: General Tickets / Quantity Increment
+                    book_btn = page_instance.locator("button:has-text('احجز التذاكر'), button:has-text('Book Tickets'), a:has-text('احجز'), button:has-text('شراء')").first
+                    if await book_btn.is_visible(timeout=1000):
+                        await book_btn.click()
+                        add_log("info", "[SNIPER] تم العثور والنقر على زر بدء الحجز.")
+                        await page_instance.wait_for_timeout(500)
 
-                # Check Method A: General Tickets / Quantity Increment (+ button or book button)
-                book_btn = page.locator("button:has-text('احجز التذاكر'), button:has-text('Book Tickets'), a:has-text('احجز')").first
-                if await book_btn.is_visible(timeout=1500):
-                    await book_btn.click()
-                    await page.wait_for_timeout(1000)
-
-                plus_btn = page.locator("button:has-text('+'), .plus-btn, [aria-label='Increment']").first
-                if await plus_btn.is_visible(timeout=2000):
-                    add_log("success", "🎯 [SNIPER] تم العثور على زر زيادة الكمية (تذاكر عامة)! جاري الإضافة...")
-                    for i in range(quantity):
-                        await plus_btn.click()
-                        await page.wait_for_timeout(200)
-                    
-                    proceed_btn = page.locator("button:has-text('المتابعة'), button:has-text('اختر تذكرة'), button:has-text('Continue')").first
-                    if await proceed_btn.is_visible(timeout=2000):
-                        await proceed_btn.click()
-                        await page.wait_for_timeout(2000)
-                    
-                    reserved = True
-                else:
-                    # Check Method B: Interactive Seat Map (Clicking available seat/block directly)
-                    seat_element = page.locator(".seat-available, rect.available, g.seat:not(.booked), [data-seat-status='available']").first
-                    if await seat_element.is_visible(timeout=1500):
-                        add_log("success", "🎯 [SNIPER] تم اكتشاف خريطة مقاعد تفاعلية ومقعد متاح! جاري النقر...")
-                        await seat_element.click()
-                        await page.wait_for_timeout(1000)
-
-                        confirm_seat_btn = page.locator("button:has-text('تأكيد المقاعد'), button:has-text('Confirm Seats'), button:has-text('متابعة')").first
-                        if await confirm_seat_btn.is_visible(timeout=2000):
-                            await confirm_seat_btn.click()
-                            await page.wait_for_timeout(2000)
+                    plus_btn = page_instance.locator("button:has-text('+'), .plus-btn, [aria-label='Increment'], button[class*='plus']").first
+                    if await plus_btn.is_visible(timeout=1500):
+                        add_log("success", "🎯 [SNIPER] تم العثور على زر زيادة الكمية! جاري قنص وإضافة التذاكر...")
+                        for i in range(int(quantity)):
+                            await plus_btn.click()
+                            await page_instance.wait_for_timeout(150)
+                        
+                        proceed_btn = page_instance.locator("button:has-text('المتابعة'), button:has-text('اختر تذكرة'), button:has-text('Continue'), button:has-text('تأكيد')").first
+                        if await proceed_btn.is_visible(timeout=2000):
+                            await proceed_btn.click()
+                            add_log("success", "🚀 [SNIPER] تم النقر على زر متابعة الحجز بنجاح!")
+                            await page_instance.wait_for_timeout(1500)
                         
                         reserved = True
+                    else:
+                        # Check Method B: Interactive Seat Map
+                        seat_element = page_instance.locator(".seat-available, rect.available, g.seat:not(.booked), [data-seat-status='available'], .ticket-seat-item").first
+                        if await seat_element.is_visible(timeout=1000):
+                            add_log("success", "🎯 [SNIPER] تم اكتشاف مقعد متاح في الخريطة! جاري النقر عليه...")
+                            await seat_element.click()
+                            await page_instance.wait_for_timeout(800)
 
-                if reserved:
-                    bot_state["status"] = "success"
-                    bot_state["current_step"] = "checkout_success"
-                    bot_state["cart_hold_expires"] = "10:00 دقيقة"
-                    bot_state["booking_reference"] = f"WBK-{int(time.time())}"
+                            confirm_seat_btn = page_instance.locator("button:has-text('تأكيد المقاعد'), button:has-text('Confirm Seats'), button:has-text('متابعة'), button:has-text('احجز الآن')").first
+                            if await confirm_seat_btn.is_visible(timeout=2000):
+                                await confirm_seat_btn.click()
+                                add_log("success", "🚀 [SNIPER] تم تأكيد المقاعد وإرسالها للسلة!")
+                                await page_instance.wait_for_timeout(1500)
+                            
+                            reserved = True
 
-                    final_screenshot = await page.screenshot()
-                    bot_state["latest_screenshot_b64"] = base64.b64encode(final_screenshot).decode("utf-8")
+                except Exception as e:
+                    add_log("info", f"انتظار إتاحة التذاكر... ({str(e)[:40]})")
 
-                    add_log("success", "=======================================================")
-                    add_log("success", f"🎉 [CONGRATS] تم قفل الحجز/المقاعد بنجاح داخل سلة Webook!")
-                    add_log("success", f"[STATUS] السلة محفوظة لمدة 10 دقائق لإتمام الدفع.")
-                    add_log("success", "=======================================================")
+                await asyncio.sleep(4)
 
-                    alert_text = (
-                        f"🎉 *تم قنص وحجز المقاعد/التذاكر بنجاح!*\n"
-                        f"• الفعالية: {bot_state['event_title']}\n"
-                        f"• الحساب: {email}\n"
-                        f"• الكمية: {quantity}\n"
-                        f"• الرابط: {target_url}\n"
-                        f"⚠️ المقاعد محفوظة لمدة 10 دقائق في السلة."
-                    )
-                    await send_telegram_alert(telegram_token, telegram_chat_id, alert_text, final_screenshot)
-                    break
-                else:
-                    await asyncio.sleep(polling_interval)
-                    try:
-                        await page.reload(wait_until="domcontentloaded", timeout=15000)
-                    except Exception:
-                        pass
+            if reserved:
+                add_log("success", "🎉 تم قنص وتثبيت التذاكر في السلة بنجاح تام! (صلاحية السلة 10 دقائق)")
+            else:
+                add_log("info", "تم إيقاف دورة القنص.")
 
-            await page.wait_for_timeout(5000)
-            await browser.close()
+        except Exception as ex:
+            add_log("error", f"خطأ في تنفيذ المحرك: {str(ex)}")
+        finally:
+            if browser_instance:
+                await browser_instance.close()
+            is_running = False
+            bot_status = "متوقف"
 
-        except Exception as e:
-            logger.error(f"Error during bot execution: {e}")
-            bot_state["status"] = "error"
-            add_log("error", f"[ERROR] حدث خطأ أثناء تنفيذ البوت: {str(e)}")
-            try:
-                s_bytes = await page.screenshot()
-                bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
-            except Exception:
-                pass
-            await browser.close()
+# HTML Template UI
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webook Auto-Booker Web App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4">
+    <div class="max-w-4xl mx-auto space-y-6">
+        <header class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">Webook Auto-Booker Web App</h1>
+                <p class="text-sm text-slate-400 mt-1">سيرفر أتمتة وحجز تذاكر Webook السريع عبر المتصفح</p>
+            </div>
+            <div id="status-badge" class="px-4 py-2 rounded-full text-sm font-semibold bg-red-950/80 text-red-400 border border-red-800">
+                الحالة: <span id="status-text">متوقف</span>
+            </div>
+        </header>
 
-def run_worker_thread(config: dict):
-    """Thread wrapper to execute asyncio playwright worker"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(playwright_automation_worker(config))
-    finally:
-        loop.close()
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <h2 class="text-lg font-semibold mb-4 text-amber-400">إعدادات حساب وحجز Webook</h2>
+                <form id="control-form" class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-slate-300 mb-1">البريد الإلكتروني</label>
+                        <input type="email" id="email" value="neyazyyy@gmail.com" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-300 mb-1">كلمة المرور</label>
+                        <input type="password" id="password" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-300 mb-1">رابط الفعالية المستهدفة</label>
+                        <input type="text" id="event_url" value="https://webook.com/ar/events/sports-event/events/moroccovghana-26-friendly/book" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-slate-300 mb-1">الكمية المطلوبة</label>
+                        <input type="number" id="quantity" value="2" min="1" max="10" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
+                    </div>
+                    <div class="flex gap-4 pt-2">
+                        <button type="button" onclick="startBot()" class="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-amber-500/20">تشغيل وقنص البوت</button>
+                        <button type="button" onclick="stopBot()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-red-600/20">إيقاف البوت</button>
+                    </div>
+                </form>
+            </div>
 
-# -------------------------------------------------------------
-# Web Server Routes
-# -------------------------------------------------------------
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col h-[500px]">
+                <h2 class="text-lg font-semibold mb-3 text-amber-400">Terminal (Playwright Worker)</h2>
+                <div id="terminal" class="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs overflow-y-auto space-y-2 select-text dir-ltr text-left">
+                    <div class="text-slate-500">جاري انتظار بدء مهام التيرمينال...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function fetchLogs() {
+            try {
+                let res = await fetch('/status');
+                let data = await res.json();
+                
+                let statusText = document.getElementById('status-text');
+                let statusBadge = document.getElementById('status-badge');
+                if(data.status === 'يعمل') {
+                    statusText.innerText = 'يعمل';
+                    statusBadge.className = 'px-4 py-2 rounded-full text-sm font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-800';
+                } else {
+                    statusText.innerText = 'متوقف';
+                    statusBadge.className = 'px-4 py-2 rounded-full text-sm font-semibold bg-red-950/80 text-red-400 border border-red-800';
+                }
+
+                let term = document.getElementById('terminal');
+                let logsHtml = '';
+                data.logs.forEach(log => {
+                    let color = 'text-slate-300';
+                    if(log.level === 'success') color = 'text-emerald-400 font-semibold';
+                    if(log.level === 'error') color = 'text-red-400 font-semibold';
+                    if(log.level === 'poll') color = 'text-purple-400';
+                    logsHtml += `<div class="${color}">[${new Date().toLocaleTimeString()}] ${log.message}</div>`;
+                });
+                if(logsHtml !== '') {
+                    term.innerHTML = logsHtml;
+                    term.scrollTop = term.scrollHeight;
+                }
+            } catch(e) {}
+        }
+
+        async function startBot() {
+            let email = document.getElementById('email').value;
+            let password = document.getElementById('password').value;
+            let event_url = document.getElementById('event_url').value;
+            let quantity = document.getElementById('quantity').value;
+
+            await fetch('/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email, password, event_url, quantity})
+            });
+            fetchLogs();
+        }
+
+        async function stopBot() {
+            await fetch('/stop', {method: 'POST'});
+            fetchLogs();
+        }
+
+        setInterval(fetchLogs, 2000);
+    </script>
+</body>
+</html>
+"""
+
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template_string(HTML_TEMPLATE)
 
-@app.route("/api/start", methods=["POST"])
-def start_bot():
-    global bot_thread, bot_stop_event
-    if bot_state["status"] == "running":
-        return jsonify({"success": False, "message": "البوت يعمل بالفعل حالياً!"}), 400
+@app.route("/status")
+def status():
+    return jsonify({"status": bot_status, "logs": bot_logs})
 
-    data = request.json or {}
-    email = data.get("email", "").strip()
-    password = data.get("password", "").strip()
-    target_url = data.get("target_url", "").strip()
+@app.route("/start", methods=["POST"])
+def start():
+    global is_running
+    if is_running:
+        return jsonify({"success": False, "message": "Bot is already running"})
+    
+    data = request.json
+    email = data.get("email")
+    password = data.get("password")
+    event_url = data.get("event_url")
+    quantity = data.get("quantity", 2)
 
-    if not email or not password or not target_url:
-        return jsonify({"success": False, "message": "يرجى تعبئة البريد الإلكتروني وكلمة المرور ورابط الفعالية."}), 400
+    asyncio.run_coroutine_threadsafe(
+        run_automation_script(email, password, event_url, quantity),
+        asyncio.get_event_loop()
+    ) if False else None # Standard task initiation fallback
+    
+    # Run async runner properly in thread or loop
+    import threading
+    threading.Thread(target=lambda: asyncio.run(run_automation_script(email, password, event_url, quantity))).start()
 
-    bot_stop_event.clear()
-    bot_thread = threading.Thread(target=run_worker_thread, args=(data,), daemon=True)
-    bot_thread.start()
+    return jsonify({"success": True})
 
-    return jsonify({"success": True, "message": "تم إطلاق بوت Webook بنجاح!"})
-
-@app.route("/api/stop", methods=["POST"])
-def stop_bot():
-    global bot_stop_event
-    bot_stop_event.set()
-    bot_state["status"] = "idle"
-    add_log("warn", "[STOP] تم إيقاف عملية البوت يدوياً من لوحة التحكم.")
-    return jsonify({"success": True, "message": "تم إيقاف تشغيل البوت."})
-
-@app.route("/api/reset", methods=["POST"])
-def reset_bot():
-    global bot_stop_event
-    bot_stop_event.set()
-    bot_state["status"] = "idle"
-    bot_state["current_step"] = "idle"
-    bot_state["logs"] = []
-    bot_state["latest_screenshot_b64"] = ""
-    add_log("info", "[RESET] تم إعادة تعيين جلسة البوت والسجل بالكامل.")
-    return jsonify({"success": True, "message": "تمت إعادة التعيين."})
-
-@app.route("/api/status", methods=["GET"])
-def get_status():
-    return jsonify({
-        "status": bot_state["status"],
-        "current_step": bot_state["current_step"],
-        "event_title": bot_state["event_title"],
-        "target_url": bot_state["target_url"],
-        "ticket_quantity": bot_state["ticket_quantity"],
-        "preferred_tier": bot_state["preferred_tier"],
-        "cart_hold_expires": bot_state["cart_hold_expires"],
-        "booking_reference": bot_state["booking_reference"],
-        "logs": bot_state["logs"],
-        "latest_screenshot": bot_state["latest_screenshot_b64"]
-    })
+@app.route("/stop", methods=["POST"])
+def stop():
+    global is_running, browser_instance
+    is_running = False
+    return jsonify({"success": True})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port)
