@@ -200,71 +200,118 @@ async def execute_playwright_workflow(action: str, config: dict):
                 await page.goto(login_url, wait_until="domcontentloaded", timeout=45000)
                 await dismiss_onetrust_overlay(page)
 
-                # Step 1.1: Fill Email
+                # Step 1.1: Locate Email Input and Type Real Email
                 bot_state["current_step"] = "fill_credentials"
-                add_log("info", f"[AUTH] إدخال البريد الإلكتروني: {email}")
-                email_input = page.locator("input[type='email'], input[name='email'], #email").first
+                add_log("info", f"[AUTH] جاري تحديد حقل البريد وكتابة: {email}")
 
-                if await email_input.is_visible(timeout=15000):
-                    await email_input.click()
-                    await email_input.fill(email)
+                email_selectors = [
+                    "input[type='email']",
+                    "input[name='email']",
+                    "input[placeholder*='email' i]",
+                    "input[placeholder*='البريد']",
+                    "input#email",
+                    "input[autocomplete='email']",
+                    "form input"
+                ]
+
+                email_field = None
+                for sel in email_selectors:
+                    try:
+                        f = page.locator(sel).first
+                        if await f.is_visible(timeout=1500):
+                            email_field = f
+                            break
+                    except Exception:
+                        pass
+
+                if email_field:
+                    await email_field.scroll_into_view_if_needed()
+                    await email_field.click()
+                    await email_field.fill("")
+                    await page.wait_for_timeout(200)
+
+                    # Type character by character with realistic delay so Webook/React state updates!
+                    await email_field.press_sequentially(email, delay=60)
+                    await page.wait_for_timeout(500)
+
+                    # Trigger react change/input events explicitly
+                    try:
+                        await page.evaluate("""(mail) => {
+                            const input = document.querySelector("input[type='email'], input[name='email'], input[placeholder*='email' i], input#email");
+                            if (input) {
+                                input.value = mail;
+                                input.dispatchEvent(new Event('input', { bubbles: true }));
+                                input.dispatchEvent(new Event('change', { bubbles: true }));
+                                input.dispatchEvent(new Event('blur', { bubbles: true }));
+                            }
+                        }""", email)
+                    except Exception:
+                        pass
+
                     await page.wait_for_timeout(400)
 
-                    # Step 1.2: Click 'المتابعة باستخدام البريد الإلكتروني' / Continue
-                    password_input = page.locator("input[type='password'], input[name='password'], #password").first
-                    is_password_visible = await password_input.is_visible(timeout=800)
+                    # Capture screenshot
+                    try:
+                        s_bytes = await page.screenshot()
+                        bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
+                    except Exception:
+                        pass
 
-                    if not is_password_visible:
-                        add_log("info", "[AUTH] الضغط على زر 'المتابعة باستخدام البريد الإلكتروني'...")
-                        
-                        continue_buttons = [
-                            "button:has-text('تابع باستخدام البريد الإلكتروني')",
-                            "button:has-text('المتابعة باستخدام البريد الإلكتروني')",
-                            "button:has-text('المتابعة')",
-                            "button:has-text('تابع')",
-                            "button:has-text('Continue with email')",
-                            "button:has-text('Continue with Email')",
-                            "button:has-text('Continue')",
-                            "form button[type='submit']",
-                            "button[type='submit']",
-                            "[data-testid*='continue']",
-                            "[data-testid*='submit']"
-                        ]
-                        clicked = False
-                        for sel in continue_buttons:
-                            try:
-                                btn = page.locator(sel).first
-                                if await btn.is_visible(timeout=1000):
-                                    await btn.scroll_into_view_if_needed()
-                                    await btn.click(force=True)
-                                    clicked = True
-                                    add_log("bot", f"[AUTH] تم النقر على زر المتابعة ({sel}).")
-                                    break
-                            except Exception:
-                                pass
+                    # Step 1.2: Click 'تابع باستخدام البريد الإلكتروني' / 'Continue with email'
+                    add_log("info", "[AUTH] الضغط على زر 'تابع باستخدام البريد الإلكتروني' / 'Continue with email'...")
 
-                        # Also dispatch Enter directly on the email input
+                    continue_buttons = [
+                        "button:has-text('تابع باستخدام البريد الإلكتروني')",
+                        "button:has-text('Continue with email')",
+                        "button:has-text('Continue with Email')",
+                        "button:has-text('المتابعة باستخدام البريد الإلكتروني')",
+                        "button:has-text('المتابعة')",
+                        "button:has-text('Continue')",
+                        "button[type='submit']",
+                        "form button"
+                    ]
+
+                    clicked = False
+                    for sel in continue_buttons:
                         try:
-                            await email_input.press("Enter")
+                            btn = page.locator(sel).first
+                            if await btn.is_visible(timeout=1200):
+                                await btn.scroll_into_view_if_needed()
+                                await btn.click(force=True)
+                                clicked = True
+                                add_log("bot", f"[AUTH] تم النقر المباشر على زر المتابعة ({sel}).")
+                                break
                         except Exception:
                             pass
 
-                        # Direct DOM click fallback
-                        if not clicked:
-                            try:
-                                await page.evaluate("""() => {
-                                    const btn = document.querySelector("button[type='submit'], form button, [data-testid*='continue']");
-                                    if (btn) btn.click();
-                                }""")
-                            except Exception:
-                                pass
-
-                        await page.wait_for_timeout(2500)
-
-                    # Step 1.3: Fill Password
-                    add_log("info", "[AUTH] إدخال كلمة المرور المشفّرة...")
+                    # Also press Enter directly on the field
                     try:
-                        await password_input.wait_for(state="visible", timeout=18000)
+                        await email_field.press("Enter")
+                    except Exception:
+                        pass
+
+                    # Fallback JS click on any button inside the login card
+                    try:
+                        await page.evaluate("""() => {
+                            const buttons = Array.from(document.querySelectorAll('button'));
+                            const target = buttons.find(b => {
+                                const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+                                return t.includes('continue with email') || t.includes('تابع باستخدام البريد') || t.includes('المتابعة');
+                            });
+                            if (target) {
+                                target.click();
+                            }
+                        }""")
+                    except Exception:
+                        pass
+
+                    await page.wait_for_timeout(3500)
+
+                    # Step 1.3: Wait for Password field to appear
+                    add_log("info", "[AUTH] بانتظار ظهور حقل كلمة المرور...")
+                    password_input = page.locator("input[type='password'], input[name='password'], #password").first
+                    try:
+                        await password_input.wait_for(state="visible", timeout=20000)
                         await password_input.click()
                         await password_input.fill(password)
                         await page.wait_for_timeout(400)
