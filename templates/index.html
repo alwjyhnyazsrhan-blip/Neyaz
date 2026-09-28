@@ -3,16 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Webook Auto-Booker Web App • بوت حجز تذاكر Webook</title>
-  <!-- Tailwind CSS CDN -->
+  <title>Webook Auto-Booker Bot • بوت حجز وقنص تذاكر Webook التلقائي</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Google Fonts: Tajawal & Fira Code -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Tajawal', sans-serif; }
     .font-mono { font-family: 'Fira Code', monospace; }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 20px rgba(16, 185, 129, 0.4); }
+      50% { box-shadow: 0 0 35px rgba(16, 185, 129, 0.8); }
+    }
+    .glow-success { animation: pulse-glow 2s infinite ease-in-out; }
   </style>
 </head>
 <body class="bg-[#07090e] text-slate-100 min-h-screen flex flex-col selection:bg-purple-600 selection:text-white">
@@ -21,240 +24,345 @@
   <header class="border-b border-slate-800 bg-[#0c101a]/95 backdrop-blur sticky top-0 z-40">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#ff007a] via-purple-600 to-indigo-600 p-0.5 shadow-lg shadow-purple-600/30 flex items-center justify-center">
-          <div class="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#ff007a] via-purple-600 to-indigo-600 p-0.5 shadow-lg shadow-purple-600/30 flex items-center justify-center">
+          <div class="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center">
             <span class="text-xl">⚡</span>
           </div>
         </div>
         <div>
           <div class="flex items-center gap-2">
-            <h1 class="text-base sm:text-lg font-black text-white">Webook Auto-Booker Web App</h1>
+            <h1 class="text-base sm:text-lg font-black text-white">Webook Auto-Booker Bot</h1>
             <span class="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full">
-              Playwright Python Engine
+              Playwright Cloud Engine
             </span>
           </div>
-          <p class="text-xs text-slate-400">سيرفر أتمتة وحجز تذاكر Webook السريع عبر المتصفح</p>
+          <p class="text-xs text-slate-400">نظام أتمتة Webook المتكامل: تسجيل الدخول، سحب الفعاليات، مسح المقاعد، القنص، وتوليد رابط الدفع</p>
         </div>
       </div>
 
       <div class="flex items-center gap-2">
-        <div id="statusPill" class="flex items-center gap-1.5 px-3 py-1 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-slate-300">
+        <div id="statusPill" class="flex items-center gap-2 px-3.5 py-1.5 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-slate-300">
           <span id="statusDot" class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
-          <span id="statusText">جاهز (Idle)</span>
+          <span id="statusText">جاهز للتشغيل</span>
         </div>
       </div>
     </div>
   </header>
 
+  <!-- Checkout / Payment Link Hero Banner (Appears when tickets are booked) -->
+  <div id="paymentSuccessBanner" class="hidden max-w-7xl w-full mx-auto px-4 sm:px-6 pt-6">
+    <div class="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-950 border-2 border-emerald-500 rounded-3xl p-6 shadow-2xl glow-success relative overflow-hidden">
+      <div class="flex flex-col lg:flex-row items-center justify-between gap-6">
+        <div class="space-y-2 text-center lg:text-right">
+          <div class="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full text-xs font-bold">
+            <span>🎉 تم قفل المقاعد بنجاح داخل سلتك الرسمية على Webook!</span>
+          </div>
+          <h2 class="text-xl sm:text-2xl font-black text-white">
+            المقاعد محجوزة الآن ومؤكدة لمدة 10 دقائق لإتمام الدفع!
+          </h2>
+          <p class="text-xs sm:text-sm text-slate-300">
+            اضغط على الزر أدناه للانتقال الفوري إلى صفحة الدفع في Webook وإدخال بطاقتك البنكية قبل انتهاء مهلة السلة.
+          </p>
+          <div class="flex items-center gap-3 pt-2 justify-center lg:justify-start">
+            <span class="text-xs text-slate-400">المهلة المتبقية للسلة:</span>
+            <span id="cartTimerDisplay" class="font-mono text-sm font-black text-amber-400 bg-slate-900/80 px-2.5 py-0.5 rounded-lg border border-slate-700">
+              09:59 دقيقة
+            </span>
+            <span class="text-xs text-slate-400">• المرجع:</span>
+            <span id="bookingRefDisplay" class="font-mono text-xs font-bold text-purple-300 bg-slate-900/80 px-2.5 py-0.5 rounded-lg border border-slate-700">
+              WBK-LIVE
+            </span>
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto shrink-0">
+          <a
+            id="checkoutDirectBtn"
+            href="https://webook.com/ar/checkout"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 hover:from-emerald-400 text-slate-950 font-black text-sm sm:text-base rounded-2xl shadow-xl shadow-emerald-500/40 flex items-center justify-center gap-2 transition transform active:scale-95 cursor-pointer"
+          >
+            <span>💳 الانتقال المباشر للدفع على Webook</span>
+            <span class="text-lg">↗</span>
+          </a>
+
+          <button
+            type="button"
+            onclick="copyPaymentUrl()"
+            id="copyUrlBtn"
+            class="w-full sm:w-auto px-5 py-4 bg-slate-900/90 hover:bg-slate-800 text-white font-bold text-xs rounded-2xl border border-slate-700 transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <span>📋 نسخ رابط الدفع</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Main Container -->
   <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-    <!-- Top Grid: Configuration Cards (Account, Event URL, Seats) -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-
-      <!-- Card 1: Account Info -->
-      <div class="bg-[#0e131f] border border-slate-800 rounded-3xl p-5 shadow-xl space-y-3">
-        <div class="flex items-center justify-between pb-2 border-b border-slate-800/80">
-          <h2 class="text-xs font-black text-white flex items-center gap-1.5">
-            <span class="text-pink-400">👤</span>
-            <span>1. حساب Webook</span>
-          </h2>
-          <span class="text-[10px] text-emerald-400 font-mono">مشفر وآمن</span>
+    <!-- 5-Step Progress Pipeline -->
+    <div class="bg-[#0b0e14] rounded-2xl p-4 border border-slate-800 shadow-lg">
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-[11px] font-bold">
+        <div id="step1" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500 transition">
+          1. تسجيل الدخول والمصادقة
         </div>
+        <div id="step2" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500 transition">
+          2. سحب فعاليات Webook
+        </div>
+        <div id="step3" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500 transition">
+          3. مسح المقاعد والتذاكر
+        </div>
+        <div id="step4" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500 transition">
+          4. قنص وحجز المقاعد
+        </div>
+        <div id="step5" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500 transition">
+          5. رابط الدفع المباشر ✅
+        </div>
+      </div>
+    </div>
 
+    <!-- STAGE 1: ACCOUNT LOGIN ON WEBOOK -->
+    <section class="bg-[#0e131f] border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
+        <div class="flex items-center gap-2">
+          <span class="w-7 h-7 rounded-xl bg-pink-500/20 text-pink-400 font-black flex items-center justify-center text-xs">
+            1
+          </span>
+          <h2 class="text-sm font-black text-white">تسجيل الدخول في Webook (البريد ثم المتابعة ثم كلمة المرور)</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="loginStatusBadge" class="text-[11px] font-mono px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-400">
+            غير مسجل الدخول
+          </span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Email Input -->
         <div>
-          <label class="block text-[11px] text-slate-400 mb-1">البريد الإلكتروني:</label>
+          <label class="block text-xs text-slate-300 font-bold mb-1.5">البريد الإلكتروني لحسابك في Webook:</label>
           <input
             id="emailInput"
             type="email"
-            placeholder="user@webook.com"
+            placeholder="name@example.com"
             value="user@webook.com"
-            class="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-pink-500 font-mono"
+            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-pink-500 font-mono"
             dir="ltr"
           />
         </div>
 
+        <!-- Password Input -->
         <div>
-          <label class="block text-[11px] text-slate-400 mb-1">كلمة المرور:</label>
+          <label class="block text-xs text-slate-300 font-bold mb-1.5">كلمة المرور:</label>
           <div class="relative">
             <input
               id="passwordInput"
               type="password"
               placeholder="••••••••••••"
               value="WebookSecure2026!"
-              class="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-pink-500 font-mono"
+              class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-pink-500 font-mono"
               dir="ltr"
             />
             <button
               type="button"
-              onclick="togglePasswordVisibility()"
-              class="absolute left-2.5 top-2 text-slate-400 hover:text-white text-xs"
+              onclick="togglePassword()"
+              class="absolute left-3 top-2.5 text-slate-400 hover:text-white text-xs cursor-pointer"
             >
               👁️
             </button>
           </div>
         </div>
+      </div>
 
-        <p class="text-[10px] text-slate-500 leading-relaxed pt-1">
-          يتم تمرير الحساب داخل الجلسة المحمية لـ Chromium لمصادقة التذاكر وإضافتها إلى حسابك الرسمي.
+      <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <p class="text-[11px] text-slate-400 flex items-center gap-1.5">
+          <span>🔒</span>
+          <span>يتعامل البوت تلقائياً مع نظام تسجيل الدخول الرسمي المكون من خطوتين: البريد ⬅️ زر المتابعة ⬅️ كلمة المرور ⬅️ تجاوز الكوكيز والحماية.</span>
         </p>
-      </div>
 
-      <!-- Card 2: Target Event URL -->
-      <div class="bg-[#0e131f] border border-slate-800 rounded-3xl p-5 shadow-xl space-y-3">
-        <div class="flex items-center justify-between pb-2 border-b border-slate-800/80">
-          <h2 class="text-xs font-black text-white flex items-center gap-1.5">
-            <span class="text-purple-400">🔗</span>
-            <span>2. رابط الفعالية المستهدفة</span>
-          </h2>
-          <span class="text-[10px] text-purple-300 font-mono">webook.com</span>
-        </div>
-
-        <div>
-          <label class="block text-[11px] text-slate-400 mb-1">رابط الفعالية المباشر:</label>
-          <input
-            id="targetUrlInput"
-            type="url"
-            placeholder="https://webook.com/ar/events/..."
-            value="https://webook.com/ar/events/riyadh-season-al-hilal-vs-al-nassr"
-            class="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 font-mono"
-            dir="ltr"
-          />
-        </div>
-
-        <div>
-          <label class="block text-[11px] text-slate-400 mb-1">توكن تليجرام (اختياري للإشعارات):</label>
-          <input
-            id="telegramTokenInput"
-            type="text"
-            placeholder="123456789:ABCdefGhIJKlmNoPQRstuVWxYZ"
-            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 font-mono"
-            dir="ltr"
-          />
-        </div>
-
-        <div>
-          <label class="block text-[11px] text-slate-400 mb-1">معرف محادثة تليجرام (Chat ID):</label>
-          <input
-            id="telegramChatIdInput"
-            type="text"
-            placeholder="987654321"
-            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 font-mono"
-            dir="ltr"
-          />
-        </div>
-      </div>
-
-      <!-- Card 3: Seats & Quantity (Dynamic Tiers & Unlimited Quantity) -->
-      <div class="bg-[#0e131f] border border-slate-800 rounded-3xl p-5 shadow-xl space-y-3 flex flex-col justify-between">
-        <div>
-          <div class="flex items-center justify-between pb-2 border-b border-slate-800/80 mb-3">
-            <h2 class="text-xs font-black text-white flex items-center gap-1.5">
-              <span class="text-amber-400">🎟️</span>
-              <span>3. فئات المقاعد والكمية الحرة</span>
-            </h2>
-            <span class="text-[10px] text-amber-300 font-mono">سحب مباشر من المنصة</span>
-          </div>
-
-          <div class="space-y-3">
-            <!-- Dynamic Select Dropdown for Tiers -->
-            <div>
-              <label class="block text-[11px] text-slate-400 mb-1">الفئة المسحوبة من المنصة:</label>
-              <select
-                id="tierSelect"
-                class="w-full bg-slate-950 border border-amber-500/50 rounded-xl px-3 py-2 text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-400"
-              >
-                <option value="">-- اضغط بدء البوت لجلب الفئات الحقيقية تلقائياً --</option>
-              </select>
-              <p class="text-[10px] text-slate-500 mt-1">يقوم البوت بملء هذه القائمة تلقائياً بالفئات المتاحة فعلياً.</p>
-            </div>
-
-            <!-- Unlimited Quantity Input -->
-            <div class="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-              <span class="text-xs text-slate-300 font-medium">عدد التذاكر (غير محدود):</span>
-              <input
-                id="quantityInput"
-                type="number"
-                min="1"
-                value="2"
-                class="w-20 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-center font-mono text-sm font-black text-amber-400 focus:outline-none focus:border-amber-500"
-              />
-            </div>
-          </div>
-        </div>
-
-        <div class="text-[11px] text-slate-400 pt-2 border-t border-slate-800/80 flex items-center justify-between">
-          <span>المهلة الزمنية للفحص:</span>
-          <span class="font-mono text-purple-300 font-bold">كل 4 ثوانٍ</span>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- Start / Stop Control Bar -->
-    <div class="bg-gradient-to-r from-slate-900 via-[#101728] to-slate-900 border border-purple-500/30 rounded-3xl p-5 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
-      <div class="flex items-center gap-3.5">
-        <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-slate-950 font-black text-2xl shadow-lg shadow-emerald-500/20 shrink-0">
-          🚀
-        </div>
-        <div>
-          <h3 class="text-base font-black text-white">التحكم المباشر في بوت Playwright</h3>
-          <p class="text-xs text-slate-400">اضغط لبدء التشغيل التلقائي والتنقل في متصفح Chromium وقنص التذاكر</p>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2.5 w-full sm:w-auto">
         <button
           type="button"
-          id="startBtn"
-          onclick="startBot()"
-          class="flex-1 sm:flex-none px-8 py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 hover:from-emerald-400 text-slate-950 font-black text-sm rounded-xl shadow-xl shadow-emerald-500/30 transition transform active:scale-95 cursor-pointer"
+          id="loginBtn"
+          onclick="executeLogin()"
+          class="px-6 py-2.5 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-pink-600/20 transition cursor-pointer"
         >
-          بدء تشغيل البوت الآن (Run Bot)
+          تسجيل الدخول وسحب الفعاليات ⚡
+        </button>
+      </div>
+    </section>
+
+    <!-- STAGE 2: LIVE WEBOOK EVENTS SYNC & SELECTION -->
+    <section class="bg-[#0e131f] border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-3">
+        <div class="flex items-center gap-2">
+          <span class="w-7 h-7 rounded-xl bg-purple-500/20 text-purple-400 font-black flex items-center justify-center text-xs">
+            2
+          </span>
+          <div>
+            <h2 class="text-sm font-black text-white">سحب وجلب الفعاليات بالتزامن مع منصة Webook.com</h2>
+            <p class="text-[11px] text-slate-400">اختر الفعالية المرغوبة من القائمة أو الصق أي رابط مباشر لفعالية في Webook</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            onclick="syncEvents()"
+            class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-slate-200 transition cursor-pointer"
+          >
+            <span>🔄 تحديث وسحب الفعاليات الحية</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Category Filter Pills -->
+      <div class="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+        <button onclick="filterEvents('all')" id="catAll" class="px-3 py-1.5 rounded-xl font-bold bg-purple-600 text-white shrink-0">
+          الكل (عرض جميع الفعاليات)
+        </button>
+        <button onclick="filterEvents('sports')" id="catSports" class="px-3 py-1.5 rounded-xl font-bold bg-slate-900 border border-slate-800 text-slate-400 shrink-0">
+          ⚽ مباريات كرة القدم ودوري روشن
+        </button>
+        <button onclick="filterEvents('entertainment')" id="catEnt" class="px-3 py-1.5 rounded-xl font-bold bg-slate-900 border border-slate-800 text-slate-400 shrink-0">
+          🎪 موسم الرياض وبوليفارد وورلد
+        </button>
+        <button onclick="filterEvents('music')" id="catMusic" class="px-3 py-1.5 rounded-xl font-bold bg-slate-900 border border-slate-800 text-slate-400 shrink-0">
+          🎤 الحفلات والمسارح
+        </button>
+      </div>
+
+      <!-- Events Cards Grid -->
+      <div id="eventsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Injected via JavaScript -->
+      </div>
+
+      <!-- Custom Webook URL Input -->
+      <div class="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-center gap-3">
+        <span class="text-xs text-slate-400 shrink-0 font-medium">أو أدخل رابطاً مخصصاً من Webook:</span>
+        <input
+          id="customUrlInput"
+          type="url"
+          placeholder="https://webook.com/ar/events/..."
+          class="flex-1 w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 font-mono"
+          dir="ltr"
+        />
+        <button
+          type="button"
+          onclick="applyCustomUrl()"
+          class="w-full sm:w-auto px-5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition cursor-pointer"
+        >
+          اعتماد الرابط ومسح المقاعد
+        </button>
+      </div>
+    </section>
+
+    <!-- STAGE 3: SCANNING AVAILABLE SEATS & TICKETS -->
+    <section class="bg-[#0e131f] border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
+        <div class="flex items-center gap-2">
+          <span class="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 font-black flex items-center justify-center text-xs">
+            3
+          </span>
+          <div>
+            <h2 class="text-sm font-black text-white">مسح المقاعد والتذاكر المتوفرة وتحديد طلبك</h2>
+            <p class="text-[11px] text-slate-400">يفحص البوت فئات التذاكر المتاحة فورياً لتختار المقاعد التي تريد قنصها</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onclick="scanSeats()"
+          id="scanBtn"
+          class="flex items-center gap-1.5 px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold transition cursor-pointer"
+        >
+          <span>🔍 مسح وفحص المقاعد المتوفرة الآن</span>
+        </button>
+      </div>
+
+      <!-- Scanned Tiers Grid -->
+      <div id="tiersContainer" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <!-- Injected via JavaScript -->
+      </div>
+
+      <!-- Seat Quantity Selector & Summary -->
+      <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+          <span class="text-xs text-slate-300 font-bold">عدد المقاعد المطلوبة:</span>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              onclick="changeQuantity(-1)"
+              class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center justify-center cursor-pointer text-sm"
+            >
+              -
+            </button>
+            <span id="quantityDisplay" class="font-mono text-base font-black text-amber-400 w-6 text-center">2</span>
+            <button
+              type="button"
+              onclick="changeQuantity(1)"
+              class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center justify-center cursor-pointer text-sm"
+            >
+              +
+            </button>
+          </div>
+          <span class="text-[11px] text-slate-500">(الحد الأقصى 8 مقاعد في الطلب)</span>
+        </div>
+
+        <div class="text-xs text-slate-400">
+          <span>الفئة المختارة للقنص:</span>
+          <strong id="selectedTierLabel" class="text-amber-300 font-bold mr-1">كبار الشخصيات VIP</strong>
+        </div>
+      </div>
+    </section>
+
+    <!-- STAGE 4: SNIPE & RESERVE TICKETS ACTION BAR -->
+    <section class="bg-gradient-to-r from-slate-900 via-[#101728] to-slate-900 border-2 border-emerald-500/40 rounded-3xl p-6 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-6">
+      <div class="flex items-center gap-4">
+        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 via-teal-400 to-emerald-600 flex items-center justify-center text-slate-950 font-black text-3xl shadow-xl shadow-emerald-500/20 shrink-0">
+          🎯
+        </div>
+        <div>
+          <h3 class="text-base sm:text-lg font-black text-white">4. تنفيذ القنص والحجز الفوري على Webook</h3>
+          <p class="text-xs text-slate-300 mt-0.5">
+            عند الضغط، ينطلق محرك Playwright لتخطي الطابور واختيار المقاعد وحجزها وتوليد رابط الدفع المباشر فوراً.
+          </p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+        <button
+          type="button"
+          id="snipeBtn"
+          onclick="startSniping()"
+          class="flex-1 sm:flex-none px-8 py-4 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 hover:from-emerald-400 text-slate-950 font-black text-sm sm:text-base rounded-2xl shadow-xl shadow-emerald-500/40 transition transform active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+        >
+          <span>🎯 قنص وحجز التذاكر الآن (Snipe & Book)</span>
         </button>
 
         <button
           type="button"
           id="stopBtn"
           onclick="stopBot()"
-          class="hidden px-6 py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-sm rounded-xl shadow-lg transition cursor-pointer"
+          class="hidden px-6 py-4 bg-rose-600 hover:bg-rose-500 text-white font-black text-sm rounded-2xl shadow-lg transition cursor-pointer"
         >
-          إيقاف البوت
+          إيقاف العملية
         </button>
 
         <button
           type="button"
           onclick="resetBot()"
-          class="px-4 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition cursor-pointer"
+          class="px-4 py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-2xl text-xs font-bold transition cursor-pointer"
           title="إعادة ضبط"
         >
           🔄 إعادة تعيين
         </button>
       </div>
-    </div>
+    </section>
 
-    <!-- Stepper Pipeline -->
-    <div class="bg-[#0b0e14] rounded-2xl p-4 border border-slate-800">
-      <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-[11px] font-bold">
-        <div id="step1" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500">
-          1. تهيئة المتصفح والتخفي
-        </div>
-        <div id="step2" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500">
-          2. تسجيل الدخول والمصادقة
-        </div>
-        <div id="step3" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500">
-          3. سحب الفئات الحقيقية
-        </div>
-        <div id="step4" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500">
-          4. قنص الكمية المطلوبة
-        </div>
-        <div id="step5" class="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500">
-          5. قفل وحفظ السلة (10 دقائق)
-        </div>
-      </div>
-    </div>
-
-    <!-- Live Split View: Browser Mirror (Left) & Real-Time Logs (Right) -->
+    <!-- LIVE MONITORING: PLAYWRIGHT BROWSER MIRROR & REAL-TIME LOGS -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
       <!-- Left: Chromium Mirror (7 cols) -->
@@ -265,25 +373,27 @@
             <span class="w-3 h-3 rounded-full bg-amber-500"></span>
             <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
           </div>
-          <span class="text-slate-300 truncate max-w-sm" id="urlMirror">webook.com</span>
-          <span class="text-purple-400 font-sans text-[11px]">Chromium Headless</span>
+          <span class="text-slate-300 truncate max-w-sm" id="urlMirror">https://webook.com/ar</span>
+          <span class="text-purple-400 font-sans text-[11px] font-bold">Chromium Live Screen</span>
         </div>
 
         <div class="flex-1 bg-[#10141f] p-4 flex items-center justify-center relative">
+          <!-- Screenshot Image -->
           <img
             id="screenshotImg"
             src=""
             alt="شاشة المتصفح المباشر"
-            class="hidden w-full h-auto max-h-[420px] object-contain rounded-xl shadow-lg border border-slate-800"
+            class="hidden w-full h-auto max-h-[440px] object-contain rounded-xl shadow-lg border border-slate-800"
           />
 
+          <!-- Placeholder when idle -->
           <div id="screenshotPlaceholder" class="text-center py-16 px-4">
             <div class="w-16 h-16 rounded-2xl bg-purple-600/10 border border-purple-500/20 text-purple-400 mx-auto flex items-center justify-center mb-3 text-2xl">
               🖥️
             </div>
-            <h4 class="text-sm font-bold text-white mb-1">شاشة متصفح Playwright</h4>
+            <h4 class="text-sm font-bold text-white mb-1">شاشة متصفح Playwright الآلي</h4>
             <p class="text-xs text-slate-400 max-w-sm mx-auto">
-              عند بدء تشغيل البوت، ستظهر لقطات شاشة حية من متصفح السيرفر توضح عملية الدخول وتحديد التذاكر خطوة بخطوة.
+              تظهر هنا لقطات شاشة حية أثناء قيام السيرفر بتسجيل الدخول، تجاوز الطابور، واختيار المقاعد وحجزها على Webook.
             </p>
           </div>
         </div>
@@ -301,17 +411,17 @@
 
         <div id="logsTerminal" class="flex-1 p-3.5 font-mono text-[11px] leading-relaxed overflow-y-auto space-y-1 bg-[#06080d]" dir="ltr">
           <div class="text-slate-600 pb-2 border-b border-slate-900 flex justify-between text-[10px]">
-            <span>[ENGINE] Playwright Cloud Runner v1.44</span>
-            <span>PORT: 5000</span>
+            <span>[ENGINE] Webook Playwright Automation v1.44</span>
+            <span>Render Ready</span>
           </div>
           <div class="text-slate-500 py-6 text-center text-xs" dir="rtl">
-            سجل العمليات فارغ. اضغط على "بدء تشغيل البوت" لتسجيل الأحداث لحظة بلحظة.
+            سجل العمليات فارغ. اضغط على أي زر لبدء تسجيل الأحداث مباشرة.
           </div>
         </div>
 
-        <div class="bg-[#10141f] px-4 py-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+        <div class="bg-[#10141f] px-4 py-2.5 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
           <span>الحالة: <strong id="bottomStatus" class="text-white">جاهز</strong></span>
-          <span class="text-[10px] text-slate-500 font-mono">Webook Automation Server</span>
+          <span class="text-[10px] text-slate-500 font-mono">Render Port: 10000</span>
         </div>
       </div>
 
@@ -321,63 +431,282 @@
 
   <!-- Footer -->
   <footer class="border-t border-slate-900 bg-[#07090e] py-4 text-center text-xs text-slate-500">
-    Webook Auto-Booker Standalone Python Web App • جاهز للاستضافة على Render / Railway / VPS
+    Webook Auto-Booker Bot • مهيأ بالكامل للنشر على Render.com • يدعم تسجيل الدخول ذو المرحلتين وسحب الفعاليات ورابط الدفع الفوري
   </footer>
 
-  <!-- Frontend Logic -->
+  <!-- Frontend Logic Script -->
   <script>
-    let pollInterval = null;
-    let loadedTiersCache = [];
+    let eventsList = [];
+    let selectedEvent = null;
+    let selectedTier = 'vip';
+    let ticketQuantity = 2;
+    let currentCheckoutUrl = '';
+    let cartCountdownInterval = null;
 
-    function togglePasswordVisibility() {
-      const input = document.getElementById('passwordInput');
-      input.type = input.type === 'password' ? 'text' : 'password';
+    // Initialize Page
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchEvents();
+      setInterval(updateStatus, 1500);
+    });
+
+    async function fetchEvents() {
+      try {
+        const res = await fetch('/api/events');
+        const data = await res.json();
+        if (data.success && data.events) {
+          eventsList = data.events;
+          renderEvents(eventsList);
+          if (eventsList.length > 0 && !selectedEvent) {
+            selectEvent(eventsList[0]);
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching events:', e);
+      }
     }
 
-    async function startBot() {
+    async function syncEvents() {
+      try {
+        const res = await fetch('/api/sync_events', { method: 'POST' });
+        const data = await res.json();
+        if (data.events) {
+          eventsList = data.events;
+          renderEvents(eventsList);
+          alert('تم سحب وتحديث فعاليات Webook بنجاح!');
+        }
+      } catch (e) {
+        alert('تعذر تحديث الفعاليات: ' + e.message);
+      }
+    }
+
+    function renderEvents(events) {
+      const container = document.getElementById('eventsContainer');
+      container.innerHTML = events.map(ev => {
+        const isSelected = selectedEvent && selectedEvent.id === ev.id;
+        return `
+          <div 
+            onclick="selectEventById('${ev.id}')"
+            class="bg-slate-950 rounded-2xl border transition overflow-hidden cursor-pointer flex flex-col justify-between ${
+              isSelected ? 'border-purple-500 ring-2 ring-purple-500/30' : 'border-slate-800 hover:border-slate-700'
+            }"
+          >
+            <div>
+              <div class="h-32 w-full bg-slate-900 relative overflow-hidden">
+                <img src="${ev.image}" alt="${ev.titleAr}" class="w-full h-full object-cover" />
+                <span class="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-950/80 text-purple-300 border border-slate-700">
+                  ${ev.category}
+                </span>
+                <span class="absolute bottom-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/80 text-slate-950">
+                  يبدأ من ${ev.priceFrom} ر.س
+                </span>
+              </div>
+              <div class="p-3.5 space-y-1.5">
+                <h4 class="text-xs font-bold text-white line-clamp-1">${ev.titleAr}</h4>
+                <p class="text-[11px] text-slate-400 flex items-center gap-1">
+                  <span>📍</span>
+                  <span class="truncate">${ev.venue}</span>
+                </p>
+                <p class="text-[11px] text-slate-500 font-mono">📅 ${ev.date}</p>
+              </div>
+            </div>
+
+            <div class="p-3 pt-0">
+              <button
+                type="button"
+                class="w-full py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 ${
+                  isSelected ? 'bg-purple-600 text-white' : 'bg-slate-900 text-slate-300 hover:bg-slate-800'
+                }"
+              >
+                <span>${isSelected ? 'محددة للقنص ✅' : 'اختيار هذه الفعالية'}</span>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function selectEventById(id) {
+      const found = eventsList.find(e => e.id === id);
+      if (found) selectEvent(found);
+    }
+
+    function selectEvent(ev) {
+      selectedEvent = ev;
+      document.getElementById('customUrlInput').value = ev.url;
+      renderEvents(eventsList);
+      renderTiers(ev.tiers || []);
+      highlightStep('step2', true);
+    }
+
+    function filterEvents(category) {
+      ['catAll', 'catSports', 'catEnt', 'catMusic'].forEach(id => {
+        document.getElementById(id).className = 'px-3 py-1.5 rounded-xl font-bold bg-slate-900 border border-slate-800 text-slate-400 shrink-0';
+      });
+
+      if (category === 'all') {
+        document.getElementById('catAll').className = 'px-3 py-1.5 rounded-xl font-bold bg-purple-600 text-white shrink-0';
+        renderEvents(eventsList);
+      } else {
+        const idMap = { sports: 'catSports', entertainment: 'catEnt', music: 'catMusic' };
+        if (idMap[category]) {
+          document.getElementById(idMap[category]).className = 'px-3 py-1.5 rounded-xl font-bold bg-purple-600 text-white shrink-0';
+        }
+        const filtered = eventsList.filter(e => e.categoryKey === category);
+        renderEvents(filtered);
+      }
+    }
+
+    function applyCustomUrl() {
+      const url = document.getElementById('customUrlInput').value.trim();
+      if (!url) return;
+      selectedEvent = {
+        id: 'custom-' + Date.now(),
+        titleAr: 'فعالية مخصصة من Webook',
+        url: url,
+        venue: 'منصة Webook الرسمية',
+        tiers: [
+          { id: 'vip', name: 'كبار الشخصيات VIP', price: 350, available: 12, status: 'available' },
+          { id: 'regular', name: 'المقاعد العادية Regular', price: 85, available: 90, status: 'available' }
+        ]
+      };
+      renderTiers(selectedEvent.tiers);
+      scanSeats();
+    }
+
+    function renderTiers(tiers) {
+      const container = document.getElementById('tiersContainer');
+      container.innerHTML = tiers.map(t => {
+        const isSelected = selectedTier === t.id;
+        return `
+          <div 
+            onclick="selectTier('${t.id}', '${t.name}')"
+            class="p-4 rounded-2xl border transition cursor-pointer flex flex-col justify-between ${
+              isSelected ? 'bg-amber-500/20 border-amber-500 ring-2 ring-amber-500/30' : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+            }"
+          >
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-bold text-white">${t.name}</span>
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded-full ${
+                  t.status === 'limited' ? 'bg-rose-500/20 text-rose-300' : 'bg-emerald-500/20 text-emerald-300'
+                }">
+                  ${t.status === 'limited' ? 'متبقي قليل' : 'متاح'}
+                </span>
+              </div>
+              <div class="flex items-baseline gap-1">
+                <span class="font-mono text-lg font-black text-amber-400">${t.price}</span>
+                <span class="text-[10px] text-slate-400">ر.س / تذكرة</span>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-1">المتوفر: ~${t.available} مقعد</p>
+            </div>
+
+            <div class="pt-3">
+              <span class="block text-center text-xs font-bold py-1 rounded-xl ${
+                isSelected ? 'bg-amber-500 text-slate-950' : 'bg-slate-900 text-slate-400'
+              }">
+                ${isSelected ? 'محددة للقنص ✅' : 'اختيار هذه الفئة'}
+              </span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function selectTier(tierId, tierName) {
+      selectedTier = tierId;
+      document.getElementById('selectedTierLabel').textContent = tierName;
+      if (selectedEvent && selectedEvent.tiers) {
+        renderTiers(selectedEvent.tiers);
+      }
+    }
+
+    function changeQuantity(delta) {
+      ticketQuantity = Math.max(1, Math.min(8, ticketQuantity + delta));
+      document.getElementById('quantityDisplay').textContent = ticketQuantity;
+    }
+
+    function togglePassword() {
+      const p = document.getElementById('passwordInput');
+      p.type = p.type === 'password' ? 'text' : 'password';
+    }
+
+    async function executeLogin() {
       const email = document.getElementById('emailInput').value.trim();
       const password = document.getElementById('passwordInput').value.trim();
-      const targetUrl = document.getElementById('targetUrlInput').value.trim();
-      const telegramToken = document.getElementById('telegramTokenInput').value.trim();
-      const telegramChatId = document.getElementById('telegramChatIdInput').value.trim();
-      const quantity = parseInt(document.getElementById('quantityInput').value) || 2;
-      const tierSelect = document.getElementById('tierSelect').value;
-
-      if (!email || !password || !targetUrl) {
-        alert('يرجى إدخال البريد الإلكتروني وكلمة المرور ورابط الفعالية');
+      if (!email || !password) {
+        alert('يرجى إدخال البريد الإلكتروني وكلمة المرور');
         return;
       }
 
       try {
-        const res = await fetch('/api/start', {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        alert(data.message || 'بدأ تسجيل الدخول...');
+      } catch (e) {
+        alert('خطأ أثناء تسجيل الدخول: ' + e.message);
+      }
+    }
+
+    async function scanSeats() {
+      const targetUrl = document.getElementById('customUrlInput').value.trim() || (selectedEvent && selectedEvent.url);
+      try {
+        const res = await fetch('/api/scan_seats', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_url: targetUrl })
+        });
+        const data = await res.json();
+        if (data.tiers) {
+          renderTiers(data.tiers);
+          highlightStep('step3', true);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function startSniping() {
+      const email = document.getElementById('emailInput').value.trim();
+      const password = document.getElementById('passwordInput').value.trim();
+      const targetUrl = document.getElementById('customUrlInput').value.trim() || (selectedEvent && selectedEvent.url);
+
+      if (!email || !password || !targetUrl) {
+        alert('يرجى إدخال البريد الإلكتروني وكلمة المرور واختيار الفعالية');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/snipe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email,
             password,
             target_url: targetUrl,
-            quantity: quantity,
-            tier: tierSelect,
-            telegram_token: telegramToken,
-            telegram_chat_id: telegramChatId
+            tier: selectedTier,
+            quantity: ticketQuantity
           })
         });
         const data = await res.json();
         if (data.success) {
-          document.getElementById('startBtn').classList.add('hidden');
+          document.getElementById('snipeBtn').classList.add('hidden');
           document.getElementById('stopBtn').classList.remove('hidden');
         } else {
-          alert(data.message || 'حدث خطأ أثناء البدء');
+          alert(data.message || 'حدث خطأ');
         }
-      } catch (err) {
-        alert('تعذر الاتصال بالسيرفر: ' + err.message);
+      } catch (e) {
+        alert('تعذر الاتصال بالسيرفر: ' + e.message);
       }
     }
 
     async function stopBot() {
       try {
         await fetch('/api/stop', { method: 'POST' });
-        document.getElementById('startBtn').classList.remove('hidden');
+        document.getElementById('snipeBtn').classList.remove('hidden');
         document.getElementById('stopBtn').classList.add('hidden');
       } catch (e) {}
     }
@@ -385,13 +714,41 @@
     async function resetBot() {
       try {
         await fetch('/api/reset', { method: 'POST' });
-        document.getElementById('startBtn').classList.remove('hidden');
+        document.getElementById('snipeBtn').classList.remove('hidden');
         document.getElementById('stopBtn').classList.add('hidden');
-        document.getElementById('logsTerminal').innerHTML = '<div class="text-slate-500 py-6 text-center text-xs" dir="rtl">تمت إعادة تعيين السجل.</div>';
+        document.getElementById('paymentSuccessBanner').classList.add('hidden');
+        document.getElementById('logsTerminal').innerHTML = '<div class="text-slate-500 py-6 text-center text-xs" dir="rtl">تمت إعادة تعيين الجلسة والسجل.</div>';
         document.getElementById('screenshotImg').classList.add('hidden');
         document.getElementById('screenshotPlaceholder').classList.remove('hidden');
-        document.getElementById('tierSelect').innerHTML = '<option value="">-- اضغط بدء البوت لجلب الفئات الحقيقية تلقائياً --</option>';
       } catch (e) {}
+    }
+
+    function copyPaymentUrl() {
+      if (currentCheckoutUrl) {
+        navigator.clipboard.writeText(currentCheckoutUrl);
+        const btn = document.getElementById('copyUrlBtn');
+        btn.innerHTML = '<span>✅ تم نسخ الرابط!</span>';
+        setTimeout(() => {
+          btn.innerHTML = '<span>📋 نسخ رابط الدفع</span>';
+        }, 2500);
+      }
+    }
+
+    function startCartTimer() {
+      if (cartCountdownInterval) clearInterval(cartCountdownInterval);
+      let seconds = 600; // 10 minutes
+      cartCountdownInterval = setInterval(() => {
+        seconds--;
+        if (seconds <= 0) {
+          clearInterval(cartCountdownInterval);
+          document.getElementById('cartTimerDisplay').textContent = 'انتهت المهلة';
+          return;
+        }
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        document.getElementById('cartTimerDisplay').textContent = 
+          `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')} دقيقة`;
+      }, 1000);
     }
 
     async function updateStatus() {
@@ -400,56 +757,59 @@
         if (!res.ok) return;
         const data = await res.json();
 
-        // Update Status Dot & Text
+        // Status Pill
         const dot = document.getElementById('statusDot');
         const text = document.getElementById('statusText');
         const bottomStatus = document.getElementById('bottomStatus');
+        const loginBadge = document.getElementById('loginStatusBadge');
+
+        if (data.is_logged_in) {
+          loginBadge.textContent = 'مسجل الدخول: ' + data.user_email;
+          loginBadge.className = 'text-[11px] font-mono px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+          highlightStep('step1', true);
+        }
 
         if (data.status === 'running') {
           dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping';
-          text.textContent = 'البوت يعمل (Running ⚡)';
-          bottomStatus.textContent = 'يعمل ⚡';
-          document.getElementById('startBtn').classList.add('hidden');
+          text.textContent = 'البوت يقنص المقاعد الآن ⚡';
+          bottomStatus.textContent = 'جاري القنص والحجز ⚡';
+          document.getElementById('snipeBtn').classList.add('hidden');
           document.getElementById('stopBtn').classList.remove('hidden');
         } else if (data.status === 'success') {
           dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
           text.textContent = 'تم الحجز بنجاح ✅';
-          bottomStatus.textContent = 'تم الحجز بنجاح ✅';
-          document.getElementById('startBtn').classList.add('hidden');
-          document.getElementById('stopBtn').classList.remove('hidden');
+          bottomStatus.textContent = 'تم الحجز وتوليد رابط الدفع ✅';
+          document.getElementById('snipeBtn').classList.remove('hidden');
+          document.getElementById('stopBtn').classList.add('hidden');
+
+          // SHOW DIRECT PAYMENT LINK BANNER!
+          if (data.checkout_url) {
+            currentCheckoutUrl = data.checkout_url;
+            const banner = document.getElementById('paymentSuccessBanner');
+            banner.classList.remove('hidden');
+            document.getElementById('checkoutDirectBtn').href = data.checkout_url;
+            if (data.booking_reference) {
+              document.getElementById('bookingRefDisplay').textContent = data.booking_reference;
+            }
+            startCartTimer();
+          }
         } else {
           dot.className = 'w-2.5 h-2.5 rounded-full bg-slate-500';
-          text.textContent = 'جاهز (Idle)';
+          text.textContent = 'جاهز';
           bottomStatus.textContent = 'جاهز';
-          document.getElementById('startBtn').classList.add('hidden');
+          document.getElementById('snipeBtn').classList.remove('hidden');
           document.getElementById('stopBtn').classList.add('hidden');
         }
 
         // Stepper Highlights
         const step = data.current_step;
-        highlightStep('step1', step === 'init_driver');
-        highlightStep('step2', ['navigate_login', 'fill_credentials', 'verify_auth'].includes(step));
-        highlightStep('step3', ['navigate_event', 'extract_tiers'].includes(step));
-        highlightStep('step4', ['select_ticket_tier', 'click_reserve'].includes(step));
-        highlightStep('step5', step === 'checkout_success' || data.status === 'success');
-
-        // Dynamic Tiers Dropdown Population
-        if (data.available_tiers && data.available_tiers.length > 0) {
-          const selectElem = document.getElementById('tierSelect');
-          const currentVal = selectElem.value;
-          // Check if tiers changed to avoid re-rendering bugs
-          const cacheStr = JSON.stringify(loadedTiersCache);
-          const newStr = JSON.stringify(data.available_tiers);
-          if (cacheStr !== newStr) {
-            loadedTiersCache = data.available_tiers;
-            let optionsHtml = '<option value="">-- اختر الفئة المتاحة --</option>';
-            data.available_tiers.forEach(tier => {
-              optionsHtml += `<option value="${tier}">${tier}</option>`;
-            });
-            selectElem.innerHTML = optionsHtml;
-            if (currentVal) selectElem.value = currentVal;
-          }
+        if (['init_driver', 'navigate_login', 'fill_credentials', 'verify_auth'].includes(step)) {
+          highlightStep('step1', true);
         }
+        if (step === 'sync_events') highlightStep('step2', true);
+        if (step === 'scan_seats') highlightStep('step3', true);
+        if (['select_ticket_tier', 'click_reserve'].includes(step)) highlightStep('step4', true);
+        if (step === 'checkout_success' || data.status === 'success') highlightStep('step5', true);
 
         // Screenshot
         if (data.latest_screenshot) {
@@ -459,47 +819,39 @@
           document.getElementById('screenshotPlaceholder').classList.add('hidden');
         }
 
-        // Logs Terminal
+        // Terminal Logs
         if (data.logs && data.logs.length > 0) {
           const terminal = document.getElementById('logsTerminal');
           let html = `
-            <div class="text-slate-600 pb-2 border-b border-slate-900 flex justify-between text-[10px]">
-              <span>[ENGINE] Playwright Cloud Runner v1.44</span>
-              <span>PID: WORKER</span>
+            <div class="text-slate-500 pb-2 border-b border-slate-900 flex justify-between text-[10px]">
+              <span>[ENGINE] Webook Playwright Automation v1.44</span>
+              <span>Render Engine Live</span>
             </div>
           `;
-          data.logs.forEach(l => {
+          data.logs.forEach(log => {
             let color = 'text-slate-300';
-            if (l.level === 'success') color = 'text-emerald-400 font-bold';
-            if (l.level === 'error') color = 'text-rose-400 font-bold';
-            if (l.level === 'bot') color = 'text-purple-300 font-semibold';
-            if (l.level === 'info') color = 'text-sky-300';
-            html += `
-              <div class="flex items-start gap-2 hover:bg-slate-900/40 px-1 py-0.5 rounded">
-                <span class="text-slate-600 select-none text-[10px] shrink-0 font-mono">[${l.timestamp}]</span>
-                <span class="flex-1 break-all ${color}">${l.message}</span>
-              </div>
-            `;
+            if (log.level === 'error') color = 'text-rose-400 font-bold';
+            else if (log.level === 'success') color = 'text-emerald-400 font-bold';
+            else if (log.level === 'warn') color = 'text-amber-400';
+            else if (log.level === 'bot') color = 'text-purple-300 font-bold';
+            html += `<div class="${color} flex gap-2"><span class="text-slate-600 font-mono select-none">${log.timestamp}</span><span>${log.message}</span></div>`;
           });
           terminal.innerHTML = html;
           terminal.scrollTop = terminal.scrollHeight;
         }
 
-      } catch (e) {}
-    }
-
-    function highlightStep(id, active) {
-      const elem = document.getElementById(id);
-      if (!elem) return;
-      if (active) {
-        elem.className = 'p-2.5 rounded-xl border border-purple-500 bg-purple-950/40 text-purple-200 font-bold ring-2 ring-purple-500/50';
-      } else {
-        elem.className = 'p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-500';
+      } catch (e) {
+        console.error('Status error:', e);
       }
     }
 
-    // Start Polling Status
-    pollInterval = setInterval(updateStatus, 1500);
+    function highlightStep(stepId, isActive) {
+      const el = document.getElementById(stepId);
+      if (!el) return;
+      if (isActive) {
+        el.className = 'p-2.5 rounded-xl border border-emerald-500/50 bg-emerald-950/40 text-emerald-400 font-black shadow-lg shadow-emerald-500/10';
+      }
+    }
   </script>
 </body>
 </html>
