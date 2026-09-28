@@ -59,7 +59,6 @@ async def run_automation_script(email, password, event_url, quantity):
             email_input = page_instance.locator("input[type='email'], input[name='email'], input[placeholder*='البريد']").first
             await email_input.fill(email)
             
-            # Submit or continue if needed, fill password if field exists
             await asyncio.sleep(1)
             
             pass_input = page_instance.locator("input[type='password'], input[name='password']").first
@@ -78,60 +77,68 @@ async def run_automation_script(email, password, event_url, quantity):
             await page_instance.goto(event_url, timeout=60000)
             await asyncio.sleep(3)
 
-            # 4. Sniping and Booking Loop
-            add_log("info", "بدء مراقبة المقاعد والتذاكر وقنص المتاح تلقائياً...")
+            # 4. Sniping and Seat Selection Loop (Matching video flow)
+            add_log("info", "بدء مراقبة خريطة المقاعد وقنص التذاكر المتاحة...")
             poll_count = 0
             reserved = False
+            target_qty = int(quantity)
 
             while is_running and not reserved:
                 poll_count += 1
-                add_log("poll", f"فحص حالة التذاكر والمقاعد المتاحة [#{poll_count}]...")
+                add_log("poll", f"فحص الخريطة والمقاعد المتاحة [#{poll_count}]...")
 
                 try:
-                    # Check Method A: General Tickets / Quantity Increment
-                    book_btn = page_instance.locator("button:has-text('احجز التذاكر'), button:has-text('Book Tickets'), a:has-text('احجز'), button:has-text('شراء')").first
-                    if await book_btn.is_visible(timeout=1000):
-                        await book_btn.click()
-                        add_log("info", "[SNIPER] تم العثور والنقر على زر بدء الحجز.")
-                        await page_instance.wait_for_timeout(500)
+                    # Step A: Click available section/block in stadium map if needed, or scan direct seats
+                    available_seats = page_instance.locator(".seat-available, rect.available, g.seat:not(.booked), [data-seat-status='available'], .ticket-seat-item, circle.available")
+                    count = await available_seats.count()
 
-                    plus_btn = page_instance.locator("button:has-text('+'), .plus-btn, [aria-label='Increment'], button[class*='plus']").first
-                    if await plus_btn.is_visible(timeout=1500):
-                        add_log("success", "🎯 [SNIPER] تم العثور على زر زيادة الكمية! جاري قنص وإضافة التذاكر...")
-                        for i in range(int(quantity)):
-                            await plus_btn.click()
-                            await page_instance.wait_for_timeout(150)
+                    if count > 0:
+                        add_log("success", f"🎯 [SNIPER] تم رصد مقاعد متاحة! جاري قنص عدد {target_qty} مقعد...")
                         
-                        proceed_btn = page_instance.locator("button:has-text('المتابعة'), button:has-text('اختر تذكرة'), button:has-text('Continue'), button:has-text('تأكيد')").first
-                        if await proceed_btn.is_visible(timeout=2000):
-                            await proceed_btn.click()
-                            add_log("success", "🚀 [SNIPER] تم النقر على زر متابعة الحجز بنجاح!")
-                            await page_instance.wait_for_timeout(1500)
-                        
-                        reserved = True
+                        clicked_count = 0
+                        for i in range(min(count, target_qty)):
+                            seat = available_seats.nth(i)
+                            if await seat.is_visible():
+                                await seat.click()
+                                clicked_count += 1
+                                add_log("info", f"تم اختيار المقعد رقم {clicked_count}")
+                                await page_instance.wait_for_timeout(300)
+
+                        if clicked_count >= target_qty or clicked_count > 0:
+                            # Step B: Click 'Next to Payment' or 'التالي للدفع' button
+                            next_btn = page_instance.locator("button:has-text('التالي للدفع'), button:has-text('Next'), button:has-text('متابعة'), button:has-text('الدفع')").first
+                            if await next_btn.is_visible(timeout=3000):
+                                await next_btn.click()
+                                add_log("success", "🚀 [SNIPER] تم النقر على زر التالي للدفع بنجاح!")
+                                await page_instance.wait_for_timeout(2000)
+
+                                # Step C: Accept terms and proceed to payment gateway
+                                terms_checkbox = page_instance.locator("input[type='checkbox'], .terms-checkbox").first
+                                if await terms_checkbox.is_visible(timeout=2000):
+                                    await terms_checkbox.click()
+                                    add_log("info", "تم تحديد شروط وأحكام الخدمة.")
+
+                                pay_btn = page_instance.locator("button:has-text('الدفع بواسطة'), button:has-text('Pay with'), button:has-text('تأكيد الدفع')").first
+                                if await pay_btn.is_visible(timeout=2000):
+                                    await pay_btn.click()
+                                    add_log("success", "💳 تم الانتقال لبوابة الدفع بنجاح تام!")
+                                    reserved = True
+                            else:
+                                add_log("info", "تم اختيار المقاعد ولكن زر التالي غير ظاهر بعد، جاري إعادة المحاولة...")
                     else:
-                        # Check Method B: Interactive Seat Map
-                        seat_element = page_instance.locator(".seat-available, rect.available, g.seat:not(.booked), [data-seat-status='available'], .ticket-seat-item").first
-                        if await seat_element.is_visible(timeout=1000):
-                            add_log("success", "🎯 [SNIPER] تم اكتشاف مقعد متاح في الخريطة! جاري النقر عليه...")
-                            await seat_element.click()
-                            await page_instance.wait_for_timeout(800)
-
-                            confirm_seat_btn = page_instance.locator("button:has-text('تأكيد المقاعد'), button:has-text('Confirm Seats'), button:has-text('متابعة'), button:has-text('احجز الآن')").first
-                            if await confirm_seat_btn.is_visible(timeout=2000):
-                                await confirm_seat_btn.click()
-                                add_log("success", "🚀 [SNIPER] تم تأكيد المقاعد وإرسالها للسلة!")
-                                await page_instance.wait_for_timeout(1500)
-                            
-                            reserved = True
+                        # Try clicking a block/category if individual seats are not loaded yet
+                        block_elem = page_instance.locator(".category-block, [class*='block'], g[class*='zone']").first
+                        if await block_elem.is_visible(timeout=500):
+                            await block_elem.click()
+                            await page_instance.wait_for_timeout(500)
 
                 except Exception as e:
-                    add_log("info", f"انتظار إتاحة التذاكر... ({str(e)[:40]})")
+                    add_log("info", f"انتظار إتاحة المقاعد في الخريطة... ({str(e)[:30]})")
 
-                await asyncio.sleep(4)
+                await asyncio.sleep(3)
 
             if reserved:
-                add_log("success", "🎉 تم قنص وتثبيت التذاكر في السلة بنجاح تام! (صلاحية السلة 10 دقائق)")
+                add_log("success", "🎉 تم إتمام مسار القنص والحجز بنجاح تام!")
             else:
                 add_log("info", "تم إيقاف دورة القنص.")
 
@@ -183,7 +190,7 @@ HTML_TEMPLATE = """
                     </div>
                     <div>
                         <label class="block text-sm text-slate-300 mb-1">الكمية المطلوبة</label>
-                        <input type="number" id="quantity" value="2" min="1" max="10" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
+                        <input type="number" id="quantity" value="4" min="1" max="10" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
                     </div>
                     <div class="flex gap-4 pt-2">
                         <button type="button" onclick="startBot()" class="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-amber-500/20">تشغيل وقنص البوت</button>
@@ -276,14 +283,8 @@ def start():
     email = data.get("email")
     password = data.get("password")
     event_url = data.get("event_url")
-    quantity = data.get("quantity", 2)
+    quantity = data.get("quantity", 4)
 
-    asyncio.run_coroutine_threadsafe(
-        run_automation_script(email, password, event_url, quantity),
-        asyncio.get_event_loop()
-    ) if False else None # Standard task initiation fallback
-    
-    # Run async runner properly in thread or loop
     import threading
     threading.Thread(target=lambda: asyncio.run(run_automation_script(email, password, event_url, quantity))).start()
 
