@@ -28,7 +28,7 @@ bot_state = {
     "event_title": "فعالية غير محددة",
     "account_email": "",
     "ticket_quantity": 2,
-    "preferred_tier": "vip",
+    "preferred_tier": "any",
     "latest_screenshot_b64": "",
     "cart_hold_expires": None,
     "booking_reference": None
@@ -77,7 +77,10 @@ async def playwright_automation_worker(config: dict):
     password = config.get("password", "")
     target_url = config.get("target_url", "https://webook.com/ar/explore")
     quantity = int(config.get("quantity", 2))
-    preferred_tier = config.get("tier", "vip").lower()
+    preferred_tier = config.get("tier", "").strip().lower()
+    if not preferred_tier:
+        preferred_tier = "any"
+
     telegram_token = config.get("telegram_token", "")
     telegram_chat_id = config.get("telegram_chat_id", "")
     polling_interval = float(config.get("polling_interval", 4.0))
@@ -92,7 +95,7 @@ async def playwright_automation_worker(config: dict):
     add_log("bot", f"🚀 تشغيل بوت Webook الآلي عبر سيرفر الويب...")
     add_log("info", f"[TARGET] الفعالية المستهدفة: {target_url}")
     add_log("info", f"[USER] الحساب: {email}")
-    add_log("info", f"[CONFIG] المقاعد المطلوبة: {quantity} تذاكر | فئة: {preferred_tier.upper()}")
+    add_log("info", f"[CONFIG] المقاعد المطلوبة: {quantity} تذاكر | الفئة: {preferred_tier.upper()}")
 
     async with async_playwright() as p:
         try:
@@ -224,14 +227,14 @@ async def playwright_automation_worker(config: dict):
 
             # Step 4: Availability Polling & Queue Bypass Loop
             bot_state["current_step"] = "select_ticket_tier"
-            add_log("bot", "[POLLING] بدء مراقبة المقاعد وتجاوز طابور الانتظار (Queue Bypass)...")
+            add_log("bot", f"[POLLING] بدء مراقبة المقاعد وتجاوز طابور الانتظار (الفئة المستهدفة: {preferred_tier.upper()})...")
 
             reserved = False
             polling_round = 0
 
             while not reserved and not bot_stop_event.is_set():
                 polling_round += 1
-                add_log("info", f"[POLL #{polling_round}] فحص توفر التذاكر لفئة ({preferred_tier.upper()})...")
+                add_log("info", f"[POLL #{polling_round}] فحص توفر التذاكر للفئة: [{preferred_tier.upper()}]...")
 
                 # Update live preview screenshot
                 try:
@@ -240,16 +243,16 @@ async def playwright_automation_worker(config: dict):
                 except Exception:
                     pass
 
-                # Locate Book Now / Tickets button
+                # Locate Book Now / Tickets button or direct tier buttons
                 book_btn = page.locator("button:has-text('احجز التذاكر'), button:has-text('Book Tickets'), a:has-text('احجز')").first
                 if await book_btn.is_visible(timeout=2000):
                     await book_btn.click()
                     await page.wait_for_timeout(1500)
 
-                # Locate increment button
+                # Locate increment button / available slots
                 plus_btn = page.locator("button:has-text('+'), .plus-btn, [aria-label='Increment']").first
                 if await plus_btn.is_visible(timeout=3000):
-                    add_log("success", f"🎯 [SNIPER] تم العثور على فئة التذاكر المطلوبة!")
+                    add_log("success", f"🎯 [SNIPER] تم العثور على فئة التذاكر المتاحة والحجز الفوري!")
                     for i in range(quantity):
                         await plus_btn.click()
                         await page.wait_for_timeout(250)
