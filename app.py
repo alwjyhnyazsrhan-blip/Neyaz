@@ -93,61 +93,27 @@ WEBOOK_LIVE_EVENTS = [
         ]
     },
     {
-        "id": "wbk-concert-abdulmajeed",
-        "titleAr": "ليلة الطرب: حفل الفنان عبدالمجيد عبدالله في مسرح محمد عبده",
-        "category": "حفلات غنائية",
-        "categoryKey": "music",
-        "venue": "مسرح محمد عبده أرينا، بوليفارد سيتي، الرياض",
-        "date": "الخميس 13 نوفمبر 2026 • 21:30",
-        "priceFrom": 250,
-        "image": "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800&auto=format&fit=crop&q=80",
-        "url": "https://webook.com/ar/events/abdulmajeed-abdullah-live-riyadh-season",
-        "status": "سريع النفاد 🔥",
-        "tiers": [
-            {"id": "royal", "name": "المقصورة الملكية Royal Box", "price": 1200, "available": 2, "status": "limited", "color": "purple"},
-            {"id": "vip", "name": "كبار الشخصيات VIP", "price": 750, "available": 9, "status": "limited", "color": "amber"},
-            {"id": "gold", "name": "الفئة الذهبية Gold", "price": 450, "available": 18, "status": "available", "color": "yellow"},
-            {"id": "regular", "name": "الفئة الفضية Regular", "price": 250, "available": 32, "status": "available", "color": "emerald"}
-        ]
-    },
-    {
-        "id": "wbk-diriyah-e-prix",
-        "titleAr": "سباق الدرعية إي بري 2027 (Diriyah E-Prix Formula E)",
-        "category": "رياضات وسرعة",
-        "categoryKey": "sports",
-        "venue": "حلبة الدرعية التاريخية، الرياض",
-        "date": "14 - 15 يناير 2027",
-        "priceFrom": 100,
-        "image": "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=800&auto=format&fit=crop&q=80",
-        "url": "https://webook.com/ar/sa/jed/sports-event/events/e-prix-2027-day-1",
-        "status": "متاح للحجز",
-        "tiers": [
-            {"id": "vip", "name": "تذكرة ضيافة ونادي البادوك VIP", "price": 650, "available": 20, "status": "available", "color": "amber"},
-            {"id": "regular", "name": "المدرج العام Grandstand", "price": 100, "available": 240, "status": "available", "color": "emerald"}
-        ]
-    },
-    {
-        "id": "wbk-kings-cup-nassr",
-        "titleAr": "كأس خادم الحرمين الشريفين: النصر ضد الخلود",
+        "id": "wbk-diriyah-vs-neom",
+        "titleAr": "مباراة الدرعية ضد نيوم - دوري روشن",
         "category": "مباريات كرة قدم",
         "categoryKey": "sports",
-        "venue": "الأول بارك (Al-Awwal Park)، جامعة الملك سعود، الرياض",
-        "date": "الثلاثاء 28 أكتوبر 2026 • 20:00",
-        "priceFrom": 60,
+        "venue": "مدينة الأمير فيصل بن فهد الرياضية، الرياض",
+        "date": "متاح الآن للحجز",
+        "priceFrom": 75,
         "image": "https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&auto=format&fit=crop&q=80",
-        "url": "https://webook.com/ar/sa/ruh/sports-event/events/kc-26-27-al-nassr-vs-al-kholood-s4f2y7k6",
+        "url": "https://webook.com/en/SA/RUH/sports-event/events/diriyah-vs-neom-rsl-2627-r12/book",
         "status": "متاح للحجز",
         "tiers": [
-            {"id": "vip", "name": "منصة كبار الشخصيات VIP", "price": 300, "available": 11, "status": "available", "color": "amber"},
-            {"id": "gold", "name": "الفئة الممتازة Cat 1", "price": 150, "available": 35, "status": "available", "color": "yellow"},
-            {"id": "regular", "name": "الدرجة الموحدة Regular", "price": 60, "available": 120, "status": "available", "color": "emerald"}
+            {"id": "vip", "name": "كبار الشخصيات VIP", "price": 350, "available": 14, "status": "available", "color": "amber"},
+            {"id": "gold", "name": "الفئة الممتازة Gold", "price": 180, "available": 40, "status": "available", "color": "yellow"},
+            {"id": "regular", "name": "الدرجة الموحدة Regular", "price": 75, "available": 85, "status": "available", "color": "emerald"}
         ]
     }
 ]
 
 # Global State for Bot Execution & Workflow
 bot_state = {
-    "status": "idle",       # "idle", "logging_in", "logged_in", "scanning", "running", "success", "error"
+    "status": "idle",
     "current_step": "idle",
     "is_logged_in": False,
     "user_email": "",
@@ -262,7 +228,7 @@ async def execute_playwright_workflow(action: str, config: dict):
 
             # Accept cookies
             try:
-                cookie_btn = page.locator("button:has-text('قبول'), button:has-text('Accept'), button#onetrust-accept-btn-handler").first
+                cookie_btn = page.locator("button:has-text('قبول'), button:has-text('Accept'), button#onetrust-accept-btn-handler, button:has-text('Accept all')").first
                 if await cookie_btn.is_visible(timeout=2500):
                     await cookie_btn.click()
                     add_log("info", "[COOKIE] تم تجاوز إشعار ملفات تعريف الارتباط.")
@@ -415,11 +381,9 @@ async def execute_playwright_workflow(action: str, config: dict):
                     for idx in range(min(card_count, 8)):
                         card = tier_cards.nth(idx)
                         text = (await card.text_content() or "").strip()
-                        # Extract price number if available
                         price_match = re.search(r'(\d+[\.,]?\d*)\s*(?:SAR|ر\.س|ريال)', text, re.IGNORECASE)
                         price = int(float(price_match.group(1).replace(',', ''))) if price_match else (75 + idx * 50)
                         
-                        # Extract name
                         lines = [line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) < 40]
                         name = lines[0] if lines else f"فئة Webook #{idx+1}"
 
@@ -441,7 +405,6 @@ async def execute_playwright_workflow(action: str, config: dict):
             except Exception as scan_err:
                 logger.warning(f"Live DOM extraction notice: {scan_err}")
 
-            # If action was scan only, stop here
             if action == "scan_only":
                 bot_state["status"] = "scanned"
                 add_log("success", "✅ [SCAN] تم مسح التذاكر والمقاعد المتوفرة وعرضها في لوحة التحكم.")
@@ -461,7 +424,7 @@ async def execute_playwright_workflow(action: str, config: dict):
                 polling_round += 1
                 add_log("info", f"[POLL #{polling_round}] فحص توفر التذاكر وإجراء القنص...")
 
-                # First, ensure any overlay or cookie dialog is closed
+                # Auto-dismiss cookie dialog if appearing
                 try:
                     cookie_btn = page.locator("button:has-text('Accept all'), button:has-text('قبول'), button:has-text('Accept')").first
                     if await cookie_btn.is_visible(timeout=1000):
@@ -469,7 +432,7 @@ async def execute_playwright_workflow(action: str, config: dict):
                 except Exception:
                     pass
 
-                # 1. Click 'احجز التذاكر' / 'Book Tickets' button if present
+                # 1. Click 'احجز التذاكر' / 'Book Tickets'
                 book_buttons = [
                     "button:has-text('احجز التذاكر')",
                     "button:has-text('احجز الآن')",
@@ -491,7 +454,7 @@ async def execute_playwright_workflow(action: str, config: dict):
                     except Exception:
                         pass
 
-                # 2. Check for ticket selection / increment / plus buttons
+                # 2. Check for ticket increment (+) buttons
                 plus_buttons = [
                     "button:has-text('+')",
                     ".plus-btn",
@@ -550,7 +513,6 @@ async def execute_playwright_workflow(action: str, config: dict):
                     reserved = True
                     break
                 else:
-                    # Also check if direct checkout/cart page is already active
                     current_url = page.url
                     if "checkout" in current_url or "cart" in current_url or "order" in current_url:
                         add_log("success", "🎯 [CHECKOUT] تم الانتقال بالفعل إلى صفحة السلة والدفع المباشر!")
@@ -572,7 +534,6 @@ async def execute_playwright_workflow(action: str, config: dict):
                 bot_state["cart_hold_expires"] = "10:00 دقيقة"
                 bot_state["booking_reference"] = f"WBK-{int(time.time())}"
 
-                # Generate direct checkout URL
                 current_page_url = page.url
                 if "checkout" in current_page_url or "cart" in current_page_url:
                     checkout_url = current_page_url
@@ -659,7 +620,6 @@ def sync_events():
     data = request.json or {}
     url = data.get("url", "https://webook.com/ar/explore")
     
-    # Try fetching real page using requests with browser headers
     try:
         import requests
         headers = {
@@ -688,14 +648,12 @@ def scan_seats():
     if target_url:
         bot_state["target_url"] = target_url
 
-    # Check if target URL matches a known event
     matched = None
     for ev in bot_state["events"]:
         if ev["url"] == target_url or ev["id"] in target_url:
             matched = ev
             break
 
-    # If it's a specific custom Webook URL, extract the event slug and details
     if not matched and "webook.com" in target_url:
         slug = target_url.split("/")[-1].replace("-", " ").strip()
         matched = {
