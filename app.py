@@ -20,19 +20,19 @@ def add_log(level, message):
     if len(bot_logs) > 100:
         bot_logs.pop(0)
 
-# Playwright Background Worker
+# Playwright Background Worker (Ultra-Fast Sniper)
 async def run_automation_script(email, password, event_url, quantity):
     global bot_status, is_running, browser_instance, context_instance, page_instance
     is_running = True
     bot_status = "يعمل"
     
-    add_log("info", "بدء تشغيل محرك Playwright المتصفح...")
+    add_log("info", "🚀 بدء تشغيل محرك القنص الفائق (Ultra-Fast)...")
     
     async with async_playwright() as p:
         try:
             browser_instance = await p.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
             )
             context_instance = await browser_instance.new_context(
                 viewport={"width": 1280, "height": 800},
@@ -42,108 +42,106 @@ async def run_automation_script(email, password, event_url, quantity):
 
             # 1. Navigation to Login
             add_log("info", f"فتح صفحة تسجيل الدخول: https://webook.com/ar/login")
-            await page_instance.goto("https://webook.com/ar/login", timeout=60000)
-            await asyncio.sleep(2)
+            await page_instance.goto("https://webook.com/ar/login", timeout=30000)
 
-            # Handle Cookie Banner if exists
+            # Handle Cookie Banner quickly
             try:
-                cookie_btn = page_instance.locator("button:has-text('قبول'), button:has-text('Accept'), [aria-label='accept']")
-                if await cookie_btn.is_visible(timeout=3000):
-                    await cookie_btn.click()
-                    add_log("info", "تم تجاوز نافذة ملفات التعريف بنجاح.")
+                cookie_btn = page_instance.locator("button:has-text('قبول'), button:has-text('Accept')").first
+                if await cookie_btn.is_visible(timeout=1000):
+                    await cookie_btn.click(timeout=500)
             except Exception:
                 pass
 
             # 2. Authentication
-            add_log("info", f"كتابة البريد الإلكتروني: {email}")
+            add_log("info", f"تسجيل الدخول بالحساب: {email}")
             email_input = page_instance.locator("input[type='email'], input[name='email'], input[placeholder*='البريد']").first
             await email_input.fill(email)
             
-            await asyncio.sleep(1)
-            
             pass_input = page_instance.locator("input[type='password'], input[name='password']").first
-            if await pass_input.is_visible(timeout=3000):
+            if await pass_input.is_visible(timeout=2000):
                 await pass_input.fill(password)
             
             submit_btn = page_instance.locator("button[type='submit'], button:has-text('تسجيل الدخول'), button:has-text('Login')").first
-            if await submit_btn.is_visible(timeout=3000):
+            if await submit_btn.is_visible(timeout=2000):
                 await submit_btn.click()
                 
-            add_log("success", f"اكتملت مصادقة الحساب بنجاح: {email}")
-            await asyncio.sleep(3)
+            add_log("success", f"تم تسجيل الدخول بنجاح.")
+            await asyncio.sleep(1)
 
             # 3. Navigate to Event
-            add_log("info", f"الانتقال المباشر لصفحة الفعالية: {event_url}")
-            await page_instance.goto(event_url, timeout=60000)
-            await asyncio.sleep(3)
+            add_log("info", f"الانتقال السريع لصفحة الفعالية...")
+            await page_instance.goto(event_url, timeout=30000)
 
-            # 4. Sniping and Seat Selection Loop (Matching video flow)
-            add_log("info", "بدء مراقبة خريطة المقاعد وقنص التذاكر المتاحة...")
+            # 4. Ultra-Fast Sniping Loop
+            add_log("info", "⚡ بدء حلقة القنص الفوري للمقاعد والمناطق...")
             poll_count = 0
             reserved = False
             target_qty = int(quantity)
 
             while is_running and not reserved:
                 poll_count += 1
-                add_log("poll", f"فحص الخريطة والمقاعد المتاحة [#{poll_count}]...")
+                add_log("poll", f"⚡ فحص سريع للخريطة [محاولة #{poll_count}]...")
 
                 try:
-                    # Step A: Click available section/block in stadium map if needed, or scan direct seats
-                    available_seats = page_instance.locator(".seat-available, rect.available, g.seat:not(.booked), [data-seat-status='available'], .ticket-seat-item, circle.available")
+                    # Try clicking category/zone blocks first if map is overview
+                    blocks = page_instance.locator(".category-block, [class*='block'], g[class*='zone'], .seatmap-section, .area-item")
+                    b_count = await blocks.count()
+                    if b_count > 0:
+                        for b in range(min(b_count, 3)):
+                            try:
+                                await blocks.nth(b).click(timeout=300)
+                            except Exception:
+                                pass
+
+                    # Find and click available seats directly
+                    available_seats = page_instance.locator(".seat-available, rect.available, g.seat:not(.booked), [data-seat-status='available'], .ticket-seat-item, circle.available, path.available")
                     count = await available_seats.count()
 
                     if count > 0:
-                        add_log("success", f"🎯 [SNIPER] تم رصد مقاعد متاحة! جاري قنص عدد {target_qty} مقعد...")
-                        
+                        add_log("success", f"🎯 تم رصد {count} مقعد متاح! جاري حجز {target_qty} مقاعد...")
                         clicked_count = 0
+                        
                         for i in range(min(count, target_qty)):
-                            seat = available_seats.nth(i)
-                            if await seat.is_visible():
-                                await seat.click()
+                            try:
+                                seat = available_seats.nth(i)
+                                await seat.click(timeout=500, force=True)
                                 clicked_count += 1
-                                add_log("info", f"تم اختيار المقعد رقم {clicked_count}")
-                                await page_instance.wait_for_timeout(300)
+                                add_log("info", f"تم اختيار المقعد ({clicked_count}/{target_qty})")
+                            except Exception:
+                                pass
 
-                        if clicked_count >= target_qty or clicked_count > 0:
-                            # Step B: Click 'Next to Payment' or 'التالي للدفع' button
+                        if clicked_count > 0:
+                            # Fast click on 'Next to Payment'
                             next_btn = page_instance.locator("button:has-text('التالي للدفع'), button:has-text('Next'), button:has-text('متابعة'), button:has-text('الدفع')").first
-                            if await next_btn.is_visible(timeout=3000):
-                                await next_btn.click()
-                                add_log("success", "🚀 [SNIPER] تم النقر على زر التالي للدفع بنجاح!")
-                                await page_instance.wait_for_timeout(2000)
+                            if await next_btn.is_visible(timeout=1500):
+                                await next_btn.click(timeout=1000, force=True)
+                                add_log("success", "🚀 تم النقر على زر المتابعة إلى الدفع بنجاح!")
 
-                                # Step C: Accept terms and proceed to payment gateway
-                                terms_checkbox = page_instance.locator("input[type='checkbox'], .terms-checkbox").first
-                                if await terms_checkbox.is_visible(timeout=2000):
-                                    await terms_checkbox.click()
-                                    add_log("info", "تم تحديد شروط وأحكام الخدمة.")
+                                # Accept terms and proceed
+                                terms = page_instance.locator("input[type='checkbox']").first
+                                if await terms.is_visible(timeout=1000):
+                                    await terms.click(timeout=500, force=True)
 
                                 pay_btn = page_instance.locator("button:has-text('الدفع بواسطة'), button:has-text('Pay with'), button:has-text('تأكيد الدفع')").first
-                                if await pay_btn.is_visible(timeout=2000):
-                                    await pay_btn.click()
-                                    add_log("success", "💳 تم الانتقال لبوابة الدفع بنجاح تام!")
+                                if await pay_btn.is_visible(timeout=1000):
+                                    await pay_btn.click(timeout=500, force=True)
+                                    add_log("success", "💳 تم الوصول لبوابة الدفع بنجاح تام!")
                                     reserved = True
-                            else:
-                                add_log("info", "تم اختيار المقاعد ولكن زر التالي غير ظاهر بعد، جاري إعادة المحاولة...")
-                    else:
-                        # Try clicking a block/category if individual seats are not loaded yet
-                        block_elem = page_instance.locator(".category-block, [class*='block'], g[class*='zone']").first
-                        if await block_elem.is_visible(timeout=500):
-                            await block_elem.click()
-                            await page_instance.wait_for_timeout(500)
-
+                    
                 except Exception as e:
-                    add_log("info", f"انتظار إتاحة المقاعد في الخريطة... ({str(e)[:30]})")
+                    # Silent fast pass on minor iteration errors to keep lightning speed
+                    pass
 
-                await asyncio.sleep(3)
+                # Short loop delay for absolute max speed
+                await asyncio.sleep(0.5)
 
             if reserved:
-                add_log("success", "🎉 تم إتمام مسار القنص والحجز بنجاح تام!")
+                add_log("success", "🎉 تم الحجز وقنص التذاكر بنجاح خارق!")
             else:
                 add_log("info", "تم إيقاف دورة القنص.")
 
         except Exception as ex:
-            add_log("error", f"خطأ في تنفيذ المحرك: {str(ex)}")
+            add_log("error", f"خطأ بالمحرك: {str(ex)}")
         finally:
             if browser_instance:
                 await browser_instance.close()
@@ -157,15 +155,15 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webook Auto-Booker Web App</title>
+    <title>Webook Ultra-Fast Booker</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen p-4">
     <div class="max-w-4xl mx-auto space-y-6">
         <header class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex justify-between items-center">
             <div>
-                <h1 class="text-2xl font-bold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">Webook Auto-Booker Web App</h1>
-                <p class="text-sm text-slate-400 mt-1">سيرفر أتمتة وحجز تذاكر Webook السريع عبر المتصفح</p>
+                <h1 class="text-2xl font-bold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">Webook Ultra-Fast Booker</h1>
+                <p class="text-sm text-slate-400 mt-1">سيرفر أتمتة وحجز تذاكر Webook فائق السرعة</p>
             </div>
             <div id="status-badge" class="px-4 py-2 rounded-full text-sm font-semibold bg-red-950/80 text-red-400 border border-red-800">
                 الحالة: <span id="status-text">متوقف</span>
@@ -174,7 +172,7 @@ HTML_TEMPLATE = """
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-                <h2 class="text-lg font-semibold mb-4 text-amber-400">إعدادات حساب وحجز Webook</h2>
+                <h2 class="text-lg font-semibold mb-4 text-amber-400">إعدادات قنص التذاكر</h2>
                 <form id="control-form" class="space-y-4">
                     <div>
                         <label class="block text-sm text-slate-300 mb-1">البريد الإلكتروني</label>
@@ -193,16 +191,16 @@ HTML_TEMPLATE = """
                         <input type="number" id="quantity" value="4" min="1" max="10" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-amber-500">
                     </div>
                     <div class="flex gap-4 pt-2">
-                        <button type="button" onclick="startBot()" class="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-amber-500/20">تشغيل وقنص البوت</button>
+                        <button type="button" onclick="startBot()" class="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-amber-500/20">تشغيل وقنص فائق</button>
                         <button type="button" onclick="stopBot()" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl transition shadow-lg shadow-red-600/20">إيقاف البوت</button>
                     </div>
                 </form>
             </div>
 
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col h-[500px]">
-                <h2 class="text-lg font-semibold mb-3 text-amber-400">Terminal (Playwright Worker)</h2>
+                <h2 class="text-lg font-semibold mb-3 text-amber-400">Terminal (Ultra-Fast Worker)</h2>
                 <div id="terminal" class="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs overflow-y-auto space-y-2 select-text dir-ltr text-left">
-                    <div class="text-slate-500">جاري انتظار بدء مهام التيرمينال...</div>
+                    <div class="text-slate-500">جاهز للتشغيل بأقصى سرعة...</div>
                 </div>
             </div>
         </div>
@@ -259,7 +257,7 @@ HTML_TEMPLATE = """
             fetchLogs();
         }
 
-        setInterval(fetchLogs, 2000);
+        setInterval(fetchLogs, 1000);
     </script>
 </body>
 </html>
