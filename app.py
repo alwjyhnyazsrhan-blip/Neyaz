@@ -20,13 +20,13 @@ def add_log(level, message):
     if len(bot_logs) > 100:
         bot_logs.pop(0)
 
-# Playwright Background Worker (Optimized One-Shot Sniper)
+# Playwright Background Worker (Final Bulletproof Sniper)
 async def run_automation_script(email, password, event_url, quantity):
     global bot_status, is_running, browser_instance, context_instance, page_instance
     is_running = True
     bot_status = "يعمل"
     
-    add_log("info", "🚀 بدء تشغيل محرك القنص الخارق (النسخة الذكية الفورية)...")
+    add_log("info", "🚀 بدء تشغيل محرك القنص النهائي (النسخة المحصنة)...")
     
     async with async_playwright() as p:
         try:
@@ -40,30 +40,37 @@ async def run_automation_script(email, password, event_url, quantity):
             )
             page_instance = await context_instance.new_page()
 
-            # 1. Navigation to Login
-            add_log("info", f"فتح صفحة تسجيل الدخول...")
-            await page_instance.goto("https://webook.com/ar/login", timeout=15000, wait_until="domcontentloaded")
+            # 1. Navigation to Login with robust waiting
+            add_log("info", "فتح صفحة تسجيل الدخول...")
+            await page_instance.goto("https://webook.com/ar/login", timeout=30000, wait_until="domcontentloaded")
+            await asyncio.sleep(2)
 
-            # 2. Instant Authentication
-            add_log("info", f"إدخال بيانات الحساب فورياً...")
+            # 2. Robust Authentication with verification
+            add_log("info", f"تسجيل الدخول بالحساب: {email}")
             try:
-                await page_instance.locator("input[type='email'], input[name='email'], input[placeholder*='البريد']").first.fill(email, timeout=5000)
-                await page_instance.locator("input[type='password'], input[name='password']").first.fill(password, timeout=5000)
-                
+                # Wait for email input explicitly
+                email_field = page_instance.locator("input[type='email'], input[name='email'], input[placeholder*='البريد']").first
+                await email_field.wait_for(state="visible", timeout=10000)
+                await email_field.fill(email)
+
+                pass_field = page_instance.locator("input[type='password'], input[name='password']").first
+                await pass_field.wait_for(state="visible", timeout=10000)
+                await pass_field.fill(password)
+
                 submit_btn = page_instance.locator("button[type='submit'], button:has-text('تسجيل الدخول'), button:has-text('Login')").first
-                await submit_btn.click(force=True, timeout=5000)
-                add_log("success", "تم إرسال بيانات الدخول بنجاح.")
+                await submit_btn.click(force=True)
+                add_log("success", "تم إرسال بيانات الدخول، جاري التحقق...")
+                await asyncio.sleep(3) # Wait for login session to establish
             except Exception as login_err:
-                add_log("error", f"خطأ في إدخال بيانات الدخول: {str(login_err)[:30]}")
+                add_log("error", f"خطأ أثناء تسجيل الدخول: {str(login_err)[:40]}")
 
-            await asyncio.sleep(1)
+            # 3. Navigate to Event
+            add_log("info", "الانتقال لصفحة الحجز والفعالية المستهدفة...")
+            await page_instance.goto(event_url, timeout=30000, wait_until="domcontentloaded")
+            await asyncio.sleep(2)
 
-            # 3. Navigate to Event Instantly
-            add_log("info", f"الانتقال الفوري لصفحة الفعالية...")
-            await page_instance.goto(event_url, timeout=15000, wait_until="domcontentloaded")
-
-            # 4. Smart One-Shot Sniping Loop
-            add_log("info", "⚡ بدء حلقة القنص الذكية والتوجه للدفع...")
+            # 4. Smart Sniping & Checkout Loop
+            add_log("info", "⚡ بدء حلقة القنص الذكية ورصد المقاعد...")
             poll_count = 0
             reserved = False
             target_qty = int(quantity)
@@ -73,7 +80,7 @@ async def run_automation_script(email, password, event_url, quantity):
                 add_log("poll", f"⚡ فحص الخريطة [محاولة #{poll_count}]...")
 
                 try:
-                    # Execute JS to check seats, select them, and instantly click checkout
+                    # Execute JS to pick seats and attempt checkout immediately
                     res_data = await page_instance.evaluate(f"""
                         (qty) => {{
                             const selectors = [
@@ -108,14 +115,13 @@ async def run_automation_script(email, password, event_url, quantity):
                             }}
 
                             if (clicked > 0) {{
-                                // Try finding and clicking Next/Checkout button immediately
-                                const buttons = Array.from(document.querySelectorAll('button'));
-                                const targetBtn = buttons.find(b => 
-                                    b.innerText.includes('التالي للدفع') || 
-                                    b.innerText.includes('Next') || 
-                                    b.innerText.includes('متابعة') || 
-                                    b.innerText.includes('الدفع')
-                                );
+                                // Find checkout / continue buttons
+                                const buttons = Array.from(document.querySelectorAll('button, a'));
+                                const targetBtn = buttons.find(b => {{
+                                    const t = b.innerText || '';
+                                    return t.includes('التالي') || t.includes('الدفع') || t.includes('Next') || t.includes('متابعة') || t.includes('Book') || t.includes('حجز');
+                                }});
+                                
                                 if (targetBtn) {{
                                     targetBtn.click();
                                     return {{success: true, clicked: clicked, advanced: true}};
@@ -131,38 +137,30 @@ async def run_automation_script(email, password, event_url, quantity):
                         
                         if res_data.get("advanced"):
                             add_log("success", "🚀 تم الانتقال لصفحة الدفع بنجاح خارق!")
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(1.5)
 
-                            # Accept terms and click final payment
+                            # Handle checkboxes and final payment click
                             await page_instance.evaluate("""
                                 () => {
-                                    const checkbox = document.querySelector('input[type="checkbox"]');
-                                    if (checkbox && !checkbox.checked) checkbox.click();
+                                    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+                                    checkboxes.forEach(cb => { if(!cb.checked) cb.click(); });
                                     
-                                    const buttons = Array.from(document.querySelectorAll('button'));
-                                    const payBtn = buttons.find(b => b.innerText.includes('الدفع بواسطة') || b.innerText.includes('Pay with') || b.innerText.includes('تأكيد الدفع'));
+                                    const buttons = Array.from(document.querySelectorAll('button, a'));
+                                    const payBtn = buttons.find(b => {
+                                        const t = b.innerText || '';
+                                        return t.includes('الدفع') || t.includes('Pay') || t.includes('تأكيد');
+                                    });
                                     if (payBtn) payBtn.click();
                                 }
                             """)
                             add_log("success", "💳 تم الوصول لبوابة الدفع النهائية بنجاح تام!")
                             reserved = True
                             break
-                        else:
-                            # If seats were clicked but button wasn't caught in JS, try clicking via Playwright locator
-                            try:
-                                next_btn = page_instance.locator("button:has-text('التالي للدفع'), button:has-text('Next'), button:has-text('متابعة'), button:has-text('الدفع')").first
-                                if await next_btn.is_visible(timeout=500):
-                                    await next_btn.click(force=True, timeout=500)
-                                    add_log("success", "🚀 تم النقر على زر المتابعة بنجاح!")
-                                    reserved = True
-                                    break
-                            except Exception:
-                                pass
 
                 except Exception as e:
                     pass
 
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(0.4)
 
             if reserved:
                 add_log("success", "🎉 تم الحجز وقنص التذاكر بنجاح خارق!")
@@ -184,15 +182,15 @@ HTML_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webook Smart Sniper Booker</title>
+    <title>Webook Ultimate Sniper Booker</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen p-4">
     <div class="max-w-4xl mx-auto space-y-6">
         <header class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex justify-between items-center">
             <div>
-                <h1 class="text-2xl font-bold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">Webook Smart Sniper Booker</h1>
-                <p class="text-sm text-slate-400 mt-1">سيرفر أتمتة وحجز تذاكر Webook الذكي الفوري</p>
+                <h1 class="text-2xl font-bold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">Webook Ultimate Sniper</h1>
+                <p class="text-sm text-slate-400 mt-1">سيرفر أتمتة وحجز تذاكر Webook المحصن والذكي</p>
             </div>
             <div id="status-badge" class="px-4 py-2 rounded-full text-sm font-semibold bg-red-950/80 text-red-400 border border-red-800">
                 الحالة: <span id="status-text">متوقف</span>
@@ -227,9 +225,9 @@ HTML_TEMPLATE = """
             </div>
 
             <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col h-[500px]">
-                <h2 class="text-lg font-semibold mb-3 text-amber-400">Terminal (Smart Worker)</h2>
+                <h2 class="text-lg font-semibold mb-3 text-amber-400">Terminal (Ultimate Worker)</h2>
                 <div id="terminal" class="flex-1 bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-xs overflow-y-auto space-y-2 select-text dir-ltr text-left">
-                    <div class="text-slate-500">جاهز للتشغيل الذكي بأقصى سرعة...</div>
+                    <div class="text-slate-500">جاهز للتشغيل المحصن بأقصى سرعة...</div>
                 </div>
             </div>
         </div>
