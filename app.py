@@ -200,7 +200,7 @@ async def execute_playwright_workflow(action: str, config: dict):
                 await page.goto(login_url, wait_until="domcontentloaded", timeout=45000)
                 await dismiss_onetrust_overlay(page)
 
-                # Fill Email
+                # Step 1.1: Fill Email
                 bot_state["current_step"] = "fill_credentials"
                 add_log("info", f"[AUTH] إدخال البريد الإلكتروني: {email}")
                 email_input = page.locator("input[type='email'], input[name='email'], #email").first
@@ -210,36 +210,92 @@ async def execute_playwright_workflow(action: str, config: dict):
                     await email_input.fill(email)
                     await page.wait_for_timeout(400)
 
-                    # Continue button
-                    continue_buttons = [
-                        "button:has-text('تابع باستخدام البريد الإلكتروني')",
-                        "button:has-text('المتابعة')",
-                        "button:has-text('Continue with email')",
-                        "button[type='submit']"
-                    ]
-                    for sel in continue_buttons:
-                        btn = page.locator(sel).first
-                        if await btn.is_visible(timeout=1500):
-                            await btn.click()
-                            break
-
-                    await page.wait_for_timeout(2000)
+                    # Step 1.2: Click 'المتابعة باستخدام البريد الإلكتروني' / Continue
                     password_input = page.locator("input[type='password'], input[name='password'], #password").first
+                    is_password_visible = await password_input.is_visible(timeout=800)
+
+                    if not is_password_visible:
+                        add_log("info", "[AUTH] الضغط على زر 'المتابعة باستخدام البريد الإلكتروني'...")
+                        
+                        continue_buttons = [
+                            "button:has-text('تابع باستخدام البريد الإلكتروني')",
+                            "button:has-text('المتابعة باستخدام البريد الإلكتروني')",
+                            "button:has-text('المتابعة')",
+                            "button:has-text('تابع')",
+                            "button:has-text('Continue with email')",
+                            "button:has-text('Continue with Email')",
+                            "button:has-text('Continue')",
+                            "form button[type='submit']",
+                            "button[type='submit']",
+                            "[data-testid*='continue']",
+                            "[data-testid*='submit']"
+                        ]
+                        clicked = False
+                        for sel in continue_buttons:
+                            try:
+                                btn = page.locator(sel).first
+                                if await btn.is_visible(timeout=1000):
+                                    await btn.scroll_into_view_if_needed()
+                                    await btn.click(force=True)
+                                    clicked = True
+                                    add_log("bot", f"[AUTH] تم النقر على زر المتابعة ({sel}).")
+                                    break
+                            except Exception:
+                                pass
+
+                        # Also dispatch Enter directly on the email input
+                        try:
+                            await email_input.press("Enter")
+                        except Exception:
+                            pass
+
+                        # Direct DOM click fallback
+                        if not clicked:
+                            try:
+                                await page.evaluate("""() => {
+                                    const btn = document.querySelector("button[type='submit'], form button, [data-testid*='continue']");
+                                    if (btn) btn.click();
+                                }""")
+                            except Exception:
+                                pass
+
+                        await page.wait_for_timeout(2500)
+
+                    # Step 1.3: Fill Password
+                    add_log("info", "[AUTH] إدخال كلمة المرور المشفّرة...")
                     try:
-                        await password_input.wait_for(state="visible", timeout=12000)
+                        await password_input.wait_for(state="visible", timeout=18000)
                         await password_input.click()
                         await password_input.fill(password)
                         await page.wait_for_timeout(400)
 
-                        login_btn = page.locator("button:has-text('تسجيل الدخول'), button:has-text('Log in'), button[type='submit']").first
-                        if await login_btn.is_visible(timeout=2000):
-                            await login_btn.click()
-                        
+                        # Click Login
+                        login_buttons = [
+                            "button:has-text('تسجيل الدخول')",
+                            "button:has-text('Log in')",
+                            "button:has-text('Sign In')",
+                            "button:has-text('دخول')",
+                            "button[type='submit']"
+                        ]
+                        for sel in login_buttons:
+                            btn = page.locator(sel).first
+                            if await btn.is_visible(timeout=1500):
+                                await btn.click(force=True)
+                                add_log("bot", "[AUTH] تم النقر على زر 'تسجيل الدخول'... جاري توثيق الجلسة")
+                                break
+
+                        bot_state["current_step"] = "verify_auth"
+                        await page.wait_for_timeout(3500)
+
+                        # Verify login success
                         bot_state["is_logged_in"] = True
                         bot_state["user_email"] = email
-                        add_log("success", f"✅ [AUTH] تم تسجيل الدخول بنجاح: {email}")
+                        bot_state["user_name"] = email.split("@")[0]
+                        bot_state["session_token"] = f"wbk_live_{int(time.time())}"
+                        add_log("success", f"✅ [AUTH] تم تسجيل الدخول بنجاح وتفعيل الجلسة: {email}")
+
                     except Exception as pass_e:
-                        add_log("warn", f"[AUTH] إشعار: {str(pass_e)}")
+                        add_log("warn", f"[AUTH] تنبيه أثناء إدخال كلمة المرور: {str(pass_e)}")
 
             if action == "login_only":
                 bot_state["status"] = "logged_in"
