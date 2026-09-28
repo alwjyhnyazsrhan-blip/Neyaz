@@ -95,7 +95,7 @@ async def playwright_automation_worker(config: dict):
     add_log("bot", f"🚀 تشغيل بوت Webook الآلي عبر سيرفر الويب...")
     add_log("info", f"[TARGET] الفعالية المستهدفة: {target_url}")
     add_log("info", f"[USER] الحساب: {email}")
-    add_log("info", f"[CONFIG] المقاعد المطلوبة: {quantity} تذاكر | الفئة: {preferred_tier.upper()}")
+    add_log("info", f"[CONFIG] الكمية المطلوبة: {quantity} | النمط: ذكي (تذاكر أو مقاعد خريطة)")
 
     async with async_playwright() as p:
         try:
@@ -153,7 +153,6 @@ async def playwright_automation_worker(config: dict):
                 await email_input.fill(email)
                 await page.wait_for_timeout(500)
 
-                # Click continue/submit email button if present
                 continue_btn = page.locator("button:has-text('تابع باستخدام البريد الإلكتروني'), button:has-text('Continue'), button[type='submit']").first
                 if await continue_btn.is_visible(timeout=3000):
                     await continue_btn.click()
@@ -204,7 +203,7 @@ async def playwright_automation_worker(config: dict):
 
             while team_detected and not bot_stop_event.is_set():
                 try:
-                    if not await page.locator("text=أي فريق تشجع؟").is_visible(timeout=1000):
+                    if not await page.locator("text=أي فريق تشجع？").is_visible(timeout=1000) and not await page.locator("text=أي فريق تشجع؟").is_visible(timeout=1000):
                         add_log("success", "[TEAM] تم تخطي اختيار الفريق بنجاح. استئناف أتمتة البوت...")
                         break
                     
@@ -214,7 +213,6 @@ async def playwright_automation_worker(config: dict):
                     pass
                 await asyncio.sleep(3)
 
-            # Update screenshot after team selection
             try:
                 s_bytes = await page.screenshot()
                 bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
@@ -225,48 +223,58 @@ async def playwright_automation_worker(config: dict):
                 await browser.close()
                 return
 
-            # Step 4: Availability Polling & Queue Bypass Loop
+            # Step 4: Smart Sniping Loop (Supports both Tickets & Interactive Seat Maps)
             bot_state["current_step"] = "select_ticket_tier"
-            add_log("bot", f"[POLLING] بدء مراقبة المقاعد وتجاوز طابور الانتظار (الفئة المستهدفة: {preferred_tier.upper()})...")
+            add_log("bot", "[POLLING] بدء مراقبة المقاعد والتذاكر وقنص المتاح تلقائياً...")
 
             reserved = False
             polling_round = 0
 
             while not reserved and not bot_stop_event.is_set():
                 polling_round += 1
-                add_log("info", f"[POLL #{polling_round}] فحص توفر التذاكر للفئة: [{preferred_tier.upper()}]...")
+                add_log("info", f"[POLL #{polling_round}] فحص حالة التذاكر والمقاعد المتاحة...")
 
-                # Update live preview screenshot
                 try:
                     s_bytes = await page.screenshot()
                     bot_state["latest_screenshot_b64"] = base64.b64encode(s_bytes).decode("utf-8")
                 except Exception:
                     pass
 
-                # Locate Book Now / Tickets button or direct tier buttons
+                # Check Method A: General Tickets / Quantity Increment (+ button or book button)
                 book_btn = page.locator("button:has-text('احجز التذاكر'), button:has-text('Book Tickets'), a:has-text('احجز')").first
-                if await book_btn.is_visible(timeout=2000):
+                if await book_btn.is_visible(timeout=1500):
                     await book_btn.click()
-                    await page.wait_for_timeout(1500)
+                    await page.wait_for_timeout(1000)
 
-                # Locate increment button / available slots
                 plus_btn = page.locator("button:has-text('+'), .plus-btn, [aria-label='Increment']").first
-                if await plus_btn.is_visible(timeout=3000):
-                    add_log("success", f"🎯 [SNIPER] تم العثور على فئة التذاكر المتاحة والحجز الفوري!")
+                if await plus_btn.is_visible(timeout=2000):
+                    add_log("success", "🎯 [SNIPER] تم العثور على زر زيادة الكمية (تذاكر عامة)! جاري الإضافة...")
                     for i in range(quantity):
                         await plus_btn.click()
-                        await page.wait_for_timeout(250)
-                    add_log("info", f"[QUANTITY] تمت إضافة {quantity} مقاعد إلى الاختيار.")
-
-                    # Click reserve / proceed
+                        await page.wait_for_timeout(200)
+                    
                     proceed_btn = page.locator("button:has-text('المتابعة'), button:has-text('اختر تذكرة'), button:has-text('Continue')").first
-                    if await proceed_btn.is_visible():
-                        bot_state["current_step"] = "click_reserve"
+                    if await proceed_btn.is_visible(timeout=2000):
                         await proceed_btn.click()
-                        await page.wait_for_timeout(3000)
-
-                    # Successful reservation hold
+                        await page.wait_for_timeout(2000)
+                    
                     reserved = True
+                else:
+                    # Check Method B: Interactive Seat Map (Clicking available seat/block directly)
+                    seat_element = page.locator(".seat-available, rect.available, g.seat:not(.booked), [data-seat-status='available']").first
+                    if await seat_element.is_visible(timeout=1500):
+                        add_log("success", "🎯 [SNIPER] تم اكتشاف خريطة مقاعد تفاعلية ومقعد متاح! جاري النقر...")
+                        await seat_element.click()
+                        await page.wait_for_timeout(1000)
+
+                        confirm_seat_btn = page.locator("button:has-text('تأكيد المقاعد'), button:has-text('Confirm Seats'), button:has-text('متابعة')").first
+                        if await confirm_seat_btn.is_visible(timeout=2000):
+                            await confirm_seat_btn.click()
+                            await page.wait_for_timeout(2000)
+                        
+                        reserved = True
+
+                if reserved:
                     bot_state["status"] = "success"
                     bot_state["current_step"] = "checkout_success"
                     bot_state["cart_hold_expires"] = "10:00 دقيقة"
@@ -276,23 +284,21 @@ async def playwright_automation_worker(config: dict):
                     bot_state["latest_screenshot_b64"] = base64.b64encode(final_screenshot).decode("utf-8")
 
                     add_log("success", "=======================================================")
-                    add_log("success", f"🎉 [CONGRATS] تم قفل المقاعد بنجاح داخل سلة Webook!")
-                    add_log("success", f"[STATUS] السلة محفوظة لمدة 10 دقائق لإتمام عملية الدفع.")
+                    add_log("success", f"🎉 [CONGRATS] تم قفل الحجز/المقاعد بنجاح داخل سلة Webook!")
+                    add_log("success", f"[STATUS] السلة محفوظة لمدة 10 دقائق لإتمام الدفع.")
                     add_log("success", "=======================================================")
 
-                    # Send Telegram Alert
                     alert_text = (
-                        f"🎉 *تم قنص وحجز التذاكر بنجاح!*\n"
+                        f"🎉 *تم قنص وحجز المقاعد/التذاكر بنجاح!*\n"
                         f"• الفعالية: {bot_state['event_title']}\n"
                         f"• الحساب: {email}\n"
-                        f"• الكمية: {quantity} تذاكر ({preferred_tier.upper()})\n"
+                        f"• الكمية: {quantity}\n"
                         f"• الرابط: {target_url}\n"
-                        f"⚠️ المقاعد محفوظة لمدة 10 دقائق في سلة Webook لإتمام الدفع."
+                        f"⚠️ المقاعد محفوظة لمدة 10 دقائق في السلة."
                     )
                     await send_telegram_alert(telegram_token, telegram_chat_id, alert_text, final_screenshot)
                     break
                 else:
-                    # Wait and reload if polling
                     await asyncio.sleep(polling_interval)
                     try:
                         await page.reload(wait_until="domcontentloaded", timeout=15000)
